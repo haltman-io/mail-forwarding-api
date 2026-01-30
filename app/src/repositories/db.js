@@ -78,7 +78,9 @@ async function withTransaction(fn) {
   } catch (err) {
     try {
       if (conn) await conn.rollback();
-    } catch (_) {}
+    } catch (_) {
+      // ignore rollback failures
+    }
     throw err;
   } finally {
     if (conn) conn.release();

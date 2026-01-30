@@ -71,6 +71,7 @@ const dotenv = require("dotenv");
  * @property {number} apiCredentialsEmailTtlMinutes
  * @property {number} apiCredentialsEmailResendCooldownSeconds
  * @property {number} apiCredentialsEmailTokenLen
+ * @property {number} apiCredentialsEmailMaxSends
  * @property {string} apiCredentialsEmailSubject
  */
 
@@ -265,6 +266,7 @@ function buildConfig(meta) {
       60
     ),
     apiCredentialsEmailTokenLen: getInt("API_CREDENTIALS_EMAIL_TOKEN_LEN", 20),
+    apiCredentialsEmailMaxSends: getInt("API_CREDENTIALS_EMAIL_MAX_SENDS", 3),
     apiCredentialsEmailSubject: getString(
       "API_CREDENTIALS_EMAIL_SUBJECT",
       "Your API token request"

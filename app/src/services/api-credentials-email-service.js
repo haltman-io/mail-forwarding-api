@@ -4,30 +4,13 @@
  * @fileoverview API credentials email workflow.
  */
 
-const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
 const { config } = require("../config");
 const { apiTokenRequestsRepository } = require("../repositories/api-token-requests-repository");
 const { packIp16 } = require("../lib/ip-pack");
 
-const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-/**
- * @param {number} len
- * @returns {string}
- */
-function generateBase62Token(len = 20) {
-  const out = [];
-  while (out.length < len) {
-    const buf = crypto.randomBytes(32);
-    for (let i = 0; i < buf.length && out.length < len; i++) {
-      const x = buf[i];
-      if (x < 248) out.push(BASE62[x % 62]);
-    }
-  }
-  return out.join("");
-}
+const crypto = require("crypto");
 
 /**
  * @param {string} value
@@ -78,7 +61,7 @@ function makeTransport() {
  * @param {number} payload.days
  * @param {string} payload.requestIpText
  * @param {string} payload.userAgent
- * @returns {Promise<{ ok: boolean, sent: boolean, reason?: string, ttl_minutes: number }>}
+ * @returns {Promise<{ ok: boolean, sent: boolean, reason?: string, ttl_minutes: number, pending?: object }>}
  */
 async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent }) {
   const to = String(email || "").trim().toLowerCase();
@@ -93,42 +76,35 @@ async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent 
   const tokenLen = Number(config.apiCredentialsEmailTokenLen ?? 20);
   const tokenLength = Number.isFinite(tokenLen) && tokenLen >= 12 && tokenLen <= 64 ? tokenLen : 20;
 
-  const pending = await apiTokenRequestsRepository.getActivePendingByEmail(to);
-  if (pending) {
-    const lastSentAt = pending.last_sent_at ? new Date(pending.last_sent_at) : null;
-    if (lastSentAt) {
-      const elapsed = (Date.now() - lastSentAt.getTime()) / 1000;
-      if (elapsed < cooldownSeconds) {
-        return { ok: true, sent: false, reason: "cooldown", ttl_minutes: ttlMinutes };
-      }
-    }
-  }
-
-  const confirmToken = generateBase62Token(tokenLength);
-  const tokenHash32 = sha256Buffer(confirmToken);
+  const maxSendRaw = Number(config.apiCredentialsEmailMaxSends ?? 3);
+  const maxSendCount = Number.isFinite(maxSendRaw) && maxSendRaw > 0 ? maxSendRaw : 3;
 
   const requestIpPacked = requestIpText ? packIp16(requestIpText) : null;
   const ua = String(userAgent || "").slice(0, 255);
 
-  if (pending) {
-    await apiTokenRequestsRepository.rotateTokenForPending({
-      email: to,
-      tokenHash32,
-      ttlMinutes,
-      requestIpPacked,
-      userAgentOrNull: ua || null,
-      days,
-    });
-  } else {
-    await apiTokenRequestsRepository.createPending({
-      email: to,
-      tokenHash32,
-      ttlMinutes,
-      requestIpPacked,
-      userAgentOrNull: ua || null,
-      days,
-    });
+  const result = await apiTokenRequestsRepository.upsertPendingByEmailTx({
+    email: to,
+    days,
+    ttlMinutes,
+    cooldownSeconds,
+    maxSendCount,
+    requestIpPacked,
+    userAgentOrNull: ua || null,
+    tokenLength,
+  });
+
+  if (result.action === "cooldown" || result.action === "rate_limited") {
+    return {
+      ok: true,
+      sent: false,
+      reason: result.action,
+      ttl_minutes: ttlMinutes,
+      pending: result.pending || null,
+    };
   }
+
+  const confirmToken = result.token_plain;
+  if (!confirmToken) throw new Error("missing_token_plain");
 
   const from = String(config.smtpFrom || "").trim();
   if (!from) throw new Error("missing_SMTP_FROM");
@@ -151,7 +127,14 @@ async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent 
   const transporter = makeTransport();
   await transporter.sendMail({ from, to, subject, text, html });
 
-  return { ok: true, sent: true, to, ttl_minutes: ttlMinutes };
+  return {
+    ok: true,
+    sent: true,
+    to,
+    ttl_minutes: ttlMinutes,
+    pending: result.pending || null,
+    action: result.action || "created",
+  };
 }
 
 module.exports = { sendApiTokenRequestEmail, sha256Buffer };

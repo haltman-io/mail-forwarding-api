@@ -73,17 +73,36 @@ async function createCredentials(req, res) {
       userAgent: String(req.headers["user-agent"] || ""),
     });
 
+    const confirmation = {
+      sent: Boolean(result.sent),
+      ttl_minutes: Number(result.ttl_minutes ?? 15),
+    };
+
+    if (result.reason) {
+      confirmation.reason = result.reason;
+      confirmation.status = "PENDING";
+    }
+
+    if (result.pending) {
+      confirmation.status = confirmation.status || "PENDING";
+      confirmation.expires_at = result.pending.expires_at || null;
+      confirmation.last_sent_at = result.pending.last_sent_at || null;
+      confirmation.next_allowed_send_at = result.pending.next_allowed_send_at || null;
+      confirmation.send_count = Number(result.pending.send_count ?? 0);
+      confirmation.remaining_attempts = Number(result.pending.remaining_attempts ?? 0);
+    }
+
     return res.status(200).json({
       ok: true,
       action: "api_credentials_create",
       email: parsedEmail.email,
       days,
-      confirmation: {
-        sent: Boolean(result.sent),
-        ttl_minutes: Number(result.ttl_minutes ?? 15),
-      },
+      confirmation,
     });
   } catch (err) {
+    if (err && err.code === "tx_busy") {
+      return res.status(503).json({ error: "temporarily_unavailable" });
+    }
     logError("api.createCredentials.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
