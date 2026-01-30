@@ -1,0 +1,10 @@
+process.env.APP_ENV = "test";
+process.env.APP_PUBLIC_URL = "http://localhost:8080";
+process.env.SMTP_HOST = "smtp.test";
+process.env.SMTP_FROM = "Test <test@example.com>";
+process.env.MARIADB_HOST = "127.0.0.1";
+process.env.MARIADB_USER = "test";
+process.env.MARIADB_DATABASE = "test";
+process.env.CHECKDNS_BASE_URL = "http://checkdns.test";
+process.env.CHECKDNS_TOKEN = "test-token";
+process.env.CHECKDNS_HTTP_TIMEOUT_MS = "8000";

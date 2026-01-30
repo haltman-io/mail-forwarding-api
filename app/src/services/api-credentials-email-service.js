@@ -1,0 +1,157 @@
+"use strict";
+
+/**
+ * @fileoverview API credentials email workflow.
+ */
+
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+
+const { config } = require("../config");
+const { apiTokenRequestsRepository } = require("../repositories/api-token-requests-repository");
+const { packIp16 } = require("../lib/ip-pack");
+
+const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/**
+ * @param {number} len
+ * @returns {string}
+ */
+function generateBase62Token(len = 20) {
+  const out = [];
+  while (out.length < len) {
+    const buf = crypto.randomBytes(32);
+    for (let i = 0; i < buf.length && out.length < len; i++) {
+      const x = buf[i];
+      if (x < 248) out.push(BASE62[x % 62]);
+    }
+  }
+  return out.join("");
+}
+
+/**
+ * @param {string} value
+ * @returns {Buffer}
+ */
+function sha256Buffer(value) {
+  return crypto.createHash("sha256").update(String(value), "utf8").digest();
+}
+
+/**
+ * @param {string} token
+ * @returns {string}
+ */
+function buildConfirmUrl(token) {
+  const base = String(config.appPublicUrl || "").trim().replace(/\/+$/, "");
+  const endpoint = String(config.apiCredentialsConfirmEndpoint || "/api/credentials/confirm")
+    .trim()
+    .replace(/^\/?/, "/");
+
+  if (!base) throw new Error("missing_APP_PUBLIC_URL");
+  return `${base}${endpoint}?token=${encodeURIComponent(token)}`;
+}
+
+function makeTransport() {
+  const host = config.smtpHost;
+  const port = Number(config.smtpPort ?? 587);
+  const secure = Boolean(config.smtpSecure);
+  if (!host) throw new Error("missing_SMTP_HOST");
+
+  const requireAuth = Boolean(config.smtpAuthEnabled);
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: requireAuth ? { user: String(config.smtpUser || ""), pass: String(config.smtpPass || "") } : undefined,
+    name: config.smtpHeloName || undefined,
+    tls: {
+      rejectUnauthorized: Boolean(config.smtpTlsRejectUnauthorized),
+    },
+  });
+}
+
+/**
+ * Send the API token confirmation email.
+ * @param {object} payload
+ * @param {string} payload.email
+ * @param {number} payload.days
+ * @param {string} payload.requestIpText
+ * @param {string} payload.userAgent
+ * @returns {Promise<{ ok: boolean, sent: boolean, reason?: string, ttl_minutes: number }>}
+ */
+async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent }) {
+  const to = String(email || "").trim().toLowerCase();
+  if (!to) throw new Error("invalid_email");
+
+  const ttlMin = Number(config.apiCredentialsEmailTtlMinutes ?? 15);
+  const ttlMinutes = Number.isFinite(ttlMin) && ttlMin > 0 ? ttlMin : 15;
+
+  const cooldownSec = Number(config.apiCredentialsEmailResendCooldownSeconds ?? 60);
+  const cooldownSeconds = Number.isFinite(cooldownSec) && cooldownSec >= 0 ? cooldownSec : 60;
+
+  const tokenLen = Number(config.apiCredentialsEmailTokenLen ?? 20);
+  const tokenLength = Number.isFinite(tokenLen) && tokenLen >= 12 && tokenLen <= 64 ? tokenLen : 20;
+
+  const pending = await apiTokenRequestsRepository.getActivePendingByEmail(to);
+  if (pending) {
+    const lastSentAt = pending.last_sent_at ? new Date(pending.last_sent_at) : null;
+    if (lastSentAt) {
+      const elapsed = (Date.now() - lastSentAt.getTime()) / 1000;
+      if (elapsed < cooldownSeconds) {
+        return { ok: true, sent: false, reason: "cooldown", ttl_minutes: ttlMinutes };
+      }
+    }
+  }
+
+  const confirmToken = generateBase62Token(tokenLength);
+  const tokenHash32 = sha256Buffer(confirmToken);
+
+  const requestIpPacked = requestIpText ? packIp16(requestIpText) : null;
+  const ua = String(userAgent || "").slice(0, 255);
+
+  if (pending) {
+    await apiTokenRequestsRepository.rotateTokenForPending({
+      email: to,
+      tokenHash32,
+      ttlMinutes,
+      requestIpPacked,
+      userAgentOrNull: ua || null,
+      days,
+    });
+  } else {
+    await apiTokenRequestsRepository.createPending({
+      email: to,
+      tokenHash32,
+      ttlMinutes,
+      requestIpPacked,
+      userAgentOrNull: ua || null,
+      days,
+    });
+  }
+
+  const from = String(config.smtpFrom || "").trim();
+  if (!from) throw new Error("missing_SMTP_FROM");
+
+  const confirmUrl = buildConfirmUrl(confirmToken);
+  const subject = String(config.apiCredentialsEmailSubject || "Your API token request").trim();
+
+  const text =
+    `A request was made to create an API token for ${to}.\n\n` +
+    `Link (valid for ${ttlMinutes} minutes, one-time):\n` +
+    `${confirmUrl}\n\n` +
+    `If you did not request this, ignore this message.\n`;
+
+  const html =
+    `<p>A request was made to create an API token for <strong>${to}</strong>.</p>` +
+    `<p><strong>Validity:</strong> ${ttlMinutes} minutes (one-time link)</p>` +
+    `<p><a href="${confirmUrl}">${confirmUrl}</a></p>` +
+    `<p>If you did not request this, ignore this message.</p>`;
+
+  const transporter = makeTransport();
+  await transporter.sendMail({ from, to, subject, text, html });
+
+  return { ok: true, sent: true, to, ttl_minutes: ttlMinutes };
+}
+
+module.exports = { sendApiTokenRequestEmail, sha256Buffer };

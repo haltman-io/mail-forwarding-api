@@ -1,0 +1,22 @@
+const request = require("supertest");
+const { app } = require("../../src/app");
+
+describe("routes", () => {
+  test("GET /forward/subscribe without params returns invalid_params", async () => {
+    const res = await request(app).get("/forward/subscribe");
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_params", field: "name" });
+  });
+
+  test("GET /forward/confirm with invalid token returns invalid_token", async () => {
+    const res = await request(app).get("/forward/confirm?token=!!!");
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ ok: false, error: "invalid_token" });
+  });
+
+  test("GET /api/alias/list without api key returns missing_api_key", async () => {
+    const res = await request(app).get("/api/alias/list");
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "missing_api_key" });
+  });
+});
