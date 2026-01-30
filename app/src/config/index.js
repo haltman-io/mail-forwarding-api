@@ -242,6 +242,8 @@ function buildConfig(meta) {
     redisUrl: getString("REDIS_URL", ""),
     redisRateLimitPrefix: getString("REDIS_RATE_LIMIT_PREFIX", "rl:"),
     redisConnectTimeoutMs: getInt("REDIS_CONNECT_TIMEOUT_MS", 5000),
+    // Milliseconds between optional PING keepalive pings. Set 0 to disable.
+    redisPingIntervalMs: getInt("REDIS_PING_INTERVAL_MS", 15000),
 
     checkDnsBaseUrl: getString("CHECKDNS_BASE_URL", ""),
     checkDnsToken: getString("CHECKDNS_TOKEN", ""),

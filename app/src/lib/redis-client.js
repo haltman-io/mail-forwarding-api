@@ -18,6 +18,9 @@ let isConnecting = false;
 /** @type {boolean} */
 let isConnected = false;
 
+/** @type {NodeJS.Timeout | null} */
+let pingTimer = null;
+
 /**
  * Build Redis client configuration with hardened settings.
  * @returns {import('redis').RedisClientOptions}
@@ -37,11 +40,8 @@ function buildRedisConfig() {
 
         // Socket configuration with hardened timeouts
         socket: {
-            // Connection timeout: 5 seconds
-            connectTimeout: 5000,
-
-            // Socket idle timeout: 30 seconds (prevents stale connections)
-            socketTimeout: 30000,
+            // Connection timeout: configurable (default 5s)
+            connectTimeout: config.redisConnectTimeoutMs ?? 5000,
 
             // Keep TCP connection alive
             keepAlive: true,
@@ -137,6 +137,10 @@ async function getRedisClient() {
         client.on("end", () => {
             logger.warn("redis.disconnected");
             isConnected = false;
+            if (pingTimer) {
+                clearInterval(pingTimer);
+                pingTimer = null;
+            }
         });
 
         client.on("reconnecting", () => {
@@ -150,6 +154,20 @@ async function getRedisClient() {
         isConnecting = false;
 
         logger.info("redis.connected", { url: config.redisUrl?.replace(/:[^:@]+@/, ":***@") });
+
+        // Keep connection alive with periodic PINGs if configured
+        const pingMs = Number(config.redisPingIntervalMs ?? 15000);
+        if (pingMs > 0) {
+            if (pingTimer) clearInterval(pingTimer);
+            pingTimer = setInterval(async () => {
+                try {
+                    await client.ping();
+                } catch (err) {
+                    logger.warn("redis.ping.error", { err: err?.message || String(err) });
+                }
+            }, pingMs);
+            if (typeof pingTimer.unref === "function") pingTimer.unref();
+        }
 
         return client;
     } catch (err) {
@@ -192,6 +210,10 @@ async function closeRedisClient() {
             // Force disconnect if quit fails
             client.disconnect();
         } finally {
+            if (pingTimer) {
+                clearInterval(pingTimer);
+                pingTimer = null;
+            }
             client = null;
             isConnected = false;
             isConnecting = false;
