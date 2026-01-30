@@ -66,6 +66,18 @@ const dotenv = require("dotenv");
  * @property {number} rlUnsubscribePerHourPerAddress
  * @property {number} rlUnsubscribeConfirmPer10MinPerIp
  * @property {number} rlUnsubscribeConfirmPer10MinPerToken
+ * @property {number} rlCheckdnsPer10MinPerTarget
+ * @property {number} rlRequestUiPerMinPerIp
+ * @property {number} rlRequestUiPer10MinPerTarget
+ * @property {number} rlRequestEmailPer10MinPerIp
+ * @property {number} rlRequestEmailPerHourPerTarget
+ * @property {number} rlCredentialsCreatePerHourPerIp
+ * @property {number} rlCredentialsCreatePerHourPerEmail
+ * @property {number} rlCredentialsConfirmPer10MinPerIp
+ * @property {number} rlCredentialsConfirmPer10MinPerToken
+ * @property {number} rlAliasListPerMinPerKey
+ * @property {number} rlAliasCreatePerMinPerKey
+ * @property {number} rlAliasDeletePerMinPerKey
  * @property {string} defaultAliasDomain
  * @property {string} apiCredentialsConfirmEndpoint
  * @property {number} apiCredentialsEmailTtlMinutes
@@ -254,6 +266,28 @@ function buildConfig(meta) {
     rlUnsubscribeConfirmPer10MinPerIp: getInt("RL_UNSUBSCRIBE_CONFIRM_PER_10MIN_PER_IP", 120),
     rlUnsubscribeConfirmPer10MinPerToken: getInt("RL_UNSUBSCRIBE_CONFIRM_PER_10MIN_PER_TOKEN", 10),
 
+    // checkdns
+    rlCheckdnsPer10MinPerTarget: getInt("RL_CHECKDNS_PER_10MIN_PER_TARGET", 30),
+
+    // request/ui
+    rlRequestUiPerMinPerIp: getInt("RL_REQUEST_UI_PER_MIN_PER_IP", 60),
+    rlRequestUiPer10MinPerTarget: getInt("RL_REQUEST_UI_PER_10MIN_PER_TARGET", 20),
+
+    // request/email
+    rlRequestEmailPer10MinPerIp: getInt("RL_REQUEST_EMAIL_PER_10MIN_PER_IP", 20),
+    rlRequestEmailPerHourPerTarget: getInt("RL_REQUEST_EMAIL_PER_HOUR_PER_TARGET", 3),
+
+    // credentials
+    rlCredentialsCreatePerHourPerIp: getInt("RL_CREDENTIALS_CREATE_PER_HOUR_PER_IP", 10),
+    rlCredentialsCreatePerHourPerEmail: getInt("RL_CREDENTIALS_CREATE_PER_HOUR_PER_EMAIL", 3),
+    rlCredentialsConfirmPer10MinPerIp: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_IP", 60),
+    rlCredentialsConfirmPer10MinPerToken: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_TOKEN", 5),
+
+    // alias (authenticated)
+    rlAliasListPerMinPerKey: getInt("RL_ALIAS_LIST_PER_MIN_PER_KEY", 600),
+    rlAliasCreatePerMinPerKey: getInt("RL_ALIAS_CREATE_PER_MIN_PER_KEY", 120),
+    rlAliasDeletePerMinPerKey: getInt("RL_ALIAS_DELETE_PER_MIN_PER_KEY", 120),
+
     defaultAliasDomain: getString("DEFAULT_ALIAS_DOMAIN", ""),
 
     apiCredentialsConfirmEndpoint: getString(
@@ -282,8 +316,8 @@ function buildConfig(meta) {
 function validateConfig(config) {
   const warnings = [];
 
-  if (!config.smtpHost) warnings.push("SMTP_HOST is empty (email confirmation will fail)." );
-  if (!config.smtpFrom) warnings.push("SMTP_FROM is empty (email confirmation will fail)." );
+  if (!config.smtpHost) warnings.push("SMTP_HOST is empty (email confirmation will fail).");
+  if (!config.smtpFrom) warnings.push("SMTP_FROM is empty (email confirmation will fail).");
   if (!config.mariadbHost || !config.mariadbUser || !config.mariadbDatabase) {
     warnings.push("MariaDB connection is not fully configured.");
   }

@@ -34,6 +34,7 @@ const client = axios.create({
   timeout: timeoutMs,
   maxContentLength: MAX_PAYLOAD_BYTES,
   maxBodyLength: MAX_PAYLOAD_BYTES,
+  maxRedirects: 0,
   validateStatus: () => true,
 });
 

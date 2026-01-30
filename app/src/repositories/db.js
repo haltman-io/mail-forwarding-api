@@ -24,6 +24,9 @@ function getPool() {
     password: config.mariadbPassword,
     database: config.mariadbDatabase,
     connectionLimit: 10,
+    acquireTimeout: 10000,       // ADD
+    idleTimeout: 60000,          // ADD
+    minimumIdle: 2,              // ADD
   });
 
   logger.info("db.pool.created", {

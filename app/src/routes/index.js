@@ -53,36 +53,48 @@ router.get(
 
 router.get(
   "/forward/confirm",
+  rateLimit.globalLimiter,
+  rateLimit.confirmLimitByIp,
+  rateLimit.confirmLimitByToken,
   confirmAction
 );
 
 router.post(
   "/request/ui",
   rateLimit.globalLimiter,
+  rateLimit.requestUiLimitByIp,
+  rateLimit.requestUiLimitByTarget,
   requestUi
 );
 
 router.post(
   "/request/email",
   rateLimit.globalLimiter,
+  rateLimit.requestEmailLimitByIp,
+  rateLimit.requestEmailLimitByTarget,
   requestEmail
 );
 
 router.get(
   "/api/checkdns/:target",
   rateLimit.globalLimiter,
+  rateLimit.checkdnsLimitByTarget,
   checkDnsStatus
 );
 
 router.post(
   "/api/credentials/create",
   rateLimit.globalLimiter,
+  rateLimit.credentialsCreateLimitByIp,
+  rateLimit.credentialsCreateLimitByEmail,
   createCredentials
 );
 
 router.get(
   "/api/credentials/confirm",
   rateLimit.globalLimiter,
+  rateLimit.credentialsConfirmLimitByIp,
+  rateLimit.credentialsConfirmLimitByToken,
   confirmCredentials
 );
 
@@ -90,6 +102,7 @@ router.get(
   "/api/alias/list",
   rateLimit.globalLimiter,
   requireApiKey,
+  rateLimit.aliasListLimitByKey,
   apiLogAuthenticated,
   listAliases
 );
@@ -98,6 +111,7 @@ router.post(
   "/api/alias/create",
   rateLimit.globalLimiter,
   requireApiKey,
+  rateLimit.aliasCreateLimitByKey,
   apiLogAuthenticated,
   createAlias
 );
@@ -106,8 +120,10 @@ router.post(
   "/api/alias/delete",
   rateLimit.globalLimiter,
   requireApiKey,
+  rateLimit.aliasDeleteLimitByKey,
   apiLogAuthenticated,
   deleteAlias
 );
 
 module.exports = { router };
+
