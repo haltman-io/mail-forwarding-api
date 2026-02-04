@@ -17,9 +17,11 @@ const aliasRepository = {
    */
   async getByAddress(address) {
     const rows = await query(
-      `SELECT id, address, goto, active, domain_id, created, modified
-       FROM alias
-       WHERE address = ?
+      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+       FROM alias a
+       LEFT JOIN domain d
+         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+       WHERE a.address = ?
        LIMIT 1`,
       [address]
     );
@@ -44,20 +46,22 @@ const aliasRepository = {
 
   /**
    * Create a new alias row.
-   * @param {{ address: string, goto: string, domainId: number, active?: number | boolean }} payload
+   * @param {{ address: string, goto: string, domainId?: number, active?: number | boolean }} payload
    * @returns {Promise<{ ok: boolean, insertId: number | null }>} 
    */
   async createAlias({ address, goto, domainId, active = 1 }) {
     if (!address || typeof address !== "string") throw new Error("invalid_address");
     if (!goto || typeof goto !== "string") throw new Error("invalid_goto");
-    if (!Number.isInteger(domainId) || domainId <= 0) throw new Error("invalid_domain_id");
+    if (domainId !== undefined && domainId !== null) {
+      if (!Number.isInteger(domainId) || domainId <= 0) throw new Error("invalid_domain_id");
+    }
 
     const act = active ? 1 : 0;
 
     const result = await query(
-      `INSERT INTO alias (address, goto, active, domain_id, created, modified)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
-      [address, goto, act, domainId]
+      `INSERT INTO alias (address, goto, active, created, modified)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
+      [address, goto, act]
     );
 
     return {
@@ -68,15 +72,20 @@ const aliasRepository = {
 
   /**
    * Create alias with a best-effort race guard.
-   * @param {{ address: string, goto: string, domainId: number, active?: number | boolean }} payload
+   * @param {{ address: string, goto: string, domainId?: number, active?: number | boolean }} payload
    * @returns {Promise<{ ok: boolean, created: boolean, alreadyExists?: boolean, row?: object, insertId?: number | null }>}
    */
   async createIfNotExists({ address, goto, domainId, active = 1 }) {
+    if (domainId !== undefined && domainId !== null) {
+      if (!Number.isInteger(domainId) || domainId <= 0) throw new Error("invalid_domain_id");
+    }
     return withTx(async (conn) => {
       const rows = await conn.query(
-        `SELECT id, address, goto, active, domain_id
-         FROM alias
-         WHERE address = ?
+        `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id
+         FROM alias a
+         LEFT JOIN domain d
+           ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         WHERE a.address = ?
          FOR UPDATE`,
         [address]
       );
@@ -88,9 +97,9 @@ const aliasRepository = {
       const act = active ? 1 : 0;
 
       const result = await conn.query(
-        `INSERT INTO alias (address, goto, active, domain_id, created, modified)
-         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
-        [address, goto, act, domainId]
+        `INSERT INTO alias (address, goto, active, created, modified)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
+        [address, goto, act]
       );
 
       return { ok: true, created: true, insertId: result?.insertId ?? null };
@@ -106,10 +115,12 @@ const aliasRepository = {
     if (!goto || typeof goto !== "string") throw new Error("invalid_goto");
 
     const rows = await query(
-      `SELECT id, address, goto, active, domain_id, created, modified
-       FROM alias
-       WHERE goto = ?
-       ORDER BY id DESC`,
+      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+       FROM alias a
+       LEFT JOIN domain d
+         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+       WHERE a.goto = ?
+       ORDER BY a.id DESC`,
       [goto.trim().toLowerCase()]
     );
 
