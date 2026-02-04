@@ -102,17 +102,21 @@ async function confirmAction(req, res) {
       });
     }
 
-    if (intent !== "subscribe") {
+    const isAddressIntent = intent === "subscribe_address";
+    if (intent !== "subscribe" && !isAddressIntent) {
       return res.status(400).json({ ok: false, error: "unsupported_intent", intent });
     }
 
-    const domainRow = await domainRepository.getActiveByName(aliasDomain);
-    if (!domainRow) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_domain",
-        domain: aliasDomain,
-      });
+    let domainRow = null;
+    if (!isAddressIntent) {
+      domainRow = await domainRepository.getActiveByName(aliasDomain);
+      if (!domainRow) {
+        return res.status(400).json({
+          ok: false,
+          error: "invalid_domain",
+          domain: aliasDomain,
+        });
+      }
     }
 
     const existing = await aliasRepository.getByAddress(address);
@@ -128,12 +132,15 @@ async function confirmAction(req, res) {
       });
     }
 
-    const created = await aliasRepository.createIfNotExists({
+    const createPayload = {
       address,
       goto: toEmail,
       active: true,
-      domainId: domainRow.id,
-    });
+    };
+
+    if (domainRow) createPayload.domainId = domainRow.id;
+
+    const created = await aliasRepository.createIfNotExists(createPayload);
 
     return res.status(200).json({
       ok: true,

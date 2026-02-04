@@ -14,7 +14,7 @@ const { logError } = require("../../lib/logger");
 const RE_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
 const RE_DOMAIN =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const RE_EMAIL_LOCAL = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
+const RE_EMAIL_LOCAL = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
 const MAX_EMAIL_LEN = 254;
 
 function normStr(value) {
@@ -67,21 +67,32 @@ function getClientIp(req) {
  */
 async function subscribeAction(req, res) {
   try {
-    const name = normStr(req.query?.name || "");
+    const nameRaw = req.query?.name;
+    const domainRaw = req.query?.domain;
+    const addressRaw = req.query?.address;
     const toRaw = req.query?.to || "";
-    const domainInput = normStr(req.query?.domain || "");
     const clientIp = getClientIp(req);
 
-    if (!name) return res.status(400).json({ error: "invalid_params", field: "name" });
-    if (!toRaw) return res.status(400).json({ error: "invalid_params", field: "to" });
+    const addressProvided = addressRaw !== undefined;
 
-    if (!isValidName(name)) {
-      return res.status(400).json({
-        error: "invalid_params",
-        field: "name",
-        hint: "allowed: a-z 0-9 dot; cannot start/end with dot; max 64",
-      });
+    if (addressProvided) {
+      if (nameRaw !== undefined) {
+        return res.status(400).json({
+          error: "invalid_params",
+          field: "name",
+          reason: "address_incompatible_with_name",
+        });
+      }
+      if (domainRaw !== undefined) {
+        return res.status(400).json({
+          error: "invalid_params",
+          field: "domain",
+          reason: "address_incompatible_with_domain",
+        });
+      }
     }
+
+    if (!toRaw) return res.status(400).json({ error: "invalid_params", field: "to" });
 
     const toParsed = parseEmailStrict(toRaw);
     if (!toParsed) {
@@ -92,20 +103,62 @@ async function subscribeAction(req, res) {
       });
     }
 
-    const defaultDomain = normStr(config.defaultAliasDomain || "");
-    const chosenDomain = domainInput || defaultDomain;
+    let aliasName = "";
+    let aliasDomain = "";
+    let aliasAddress = "";
+    let domainRow = null;
+    let intent = "subscribe";
 
-    if (!chosenDomain) {
-      return res.status(500).json({ error: "server_misconfigured", field: "DEFAULT_ALIAS_DOMAIN" });
-    }
+    if (addressProvided) {
+      const addressParsed = parseEmailStrict(addressRaw);
+      if (!addressParsed) {
+        return res.status(400).json({
+          error: "invalid_params",
+          field: "address",
+          hint: "expected: valid email address (local: a-z 0-9 dot underscore hyphen; domain: strict DNS)",
+        });
+      }
 
-    if (!isValidDomain(chosenDomain)) {
-      const status = domainInput ? 400 : 500;
-      return res.status(status).json({
-        error: domainInput ? "invalid_params" : "server_misconfigured",
-        field: "domain",
-        hint: "allowed: strict DNS domain (a-z 0-9 hyphen dot), TLD letters >=2",
-      });
+      aliasName = addressParsed.local;
+      aliasDomain = addressParsed.domain;
+      aliasAddress = addressParsed.email;
+      intent = "subscribe_address";
+    } else {
+      const name = normStr(nameRaw || "");
+      const domainInput = normStr(domainRaw || "");
+
+      if (!name) return res.status(400).json({ error: "invalid_params", field: "name" });
+
+      if (!isValidName(name)) {
+        return res.status(400).json({
+          error: "invalid_params",
+          field: "name",
+          hint: "allowed: a-z 0-9 dot; cannot start/end with dot; max 64",
+        });
+      }
+
+      const defaultDomain = normStr(config.defaultAliasDomain || "");
+      const chosenDomain = domainInput || defaultDomain;
+
+      if (!chosenDomain) {
+        return res.status(500).json({
+          error: "server_misconfigured",
+          field: "DEFAULT_ALIAS_DOMAIN",
+        });
+      }
+
+      if (!isValidDomain(chosenDomain)) {
+        const status = domainInput ? 400 : 500;
+        return res.status(status).json({
+          error: domainInput ? "invalid_params" : "server_misconfigured",
+          field: "domain",
+          hint: "allowed: strict DNS domain (a-z 0-9 hyphen dot), TLD letters >=2",
+        });
+      }
+
+      aliasName = name;
+      aliasDomain = chosenDomain;
+      aliasAddress = `${name}@${chosenDomain}`;
     }
 
     if (clientIp) {
@@ -113,8 +166,18 @@ async function subscribeAction(req, res) {
       if (ban) return res.status(403).json({ error: "banned", ban });
     }
 
-    const banName = await bansRepository.getBannedName(name);
-    if (banName) return res.status(403).json({ error: "banned", ban: banName });
+    if (addressProvided) {
+      const banAddress = await bansRepository.getBannedEmail(aliasAddress);
+      if (banAddress) return res.status(403).json({ error: "banned", ban: banAddress });
+
+      for (const suffix of domainSuffixes(aliasDomain)) {
+        const banDomain = await bansRepository.getBannedDomain(suffix);
+        if (banDomain) return res.status(403).json({ error: "banned", ban: banDomain });
+      }
+    } else {
+      const banName = await bansRepository.getBannedName(aliasName);
+      if (banName) return res.status(403).json({ error: "banned", ban: banName });
+    }
 
     const banEmail = await bansRepository.getBannedEmail(toParsed.email);
     if (banEmail) return res.status(403).json({ error: "banned", ban: banEmail });
@@ -124,16 +187,16 @@ async function subscribeAction(req, res) {
       if (banDomain) return res.status(403).json({ error: "banned", ban: banDomain });
     }
 
-    const domainRow = await domainRepository.getActiveByName(chosenDomain);
-    if (!domainRow) {
-      return res.status(400).json({
-        error: "invalid_domain",
-        field: "domain",
-        hint: "domain must exist in database and be active",
-      });
+    if (!addressProvided) {
+      domainRow = await domainRepository.getActiveByName(aliasDomain);
+      if (!domainRow) {
+        return res.status(400).json({
+          error: "invalid_domain",
+          field: "domain",
+          hint: "domain must exist in database and be active",
+        });
+      }
     }
-
-    const aliasAddress = `${name}@${chosenDomain}`;
 
     const taken = await aliasRepository.existsByAddress(aliasAddress);
     if (taken) {
@@ -184,8 +247,9 @@ async function subscribeAction(req, res) {
       email: toParsed.email,
       requestIpText: req.ip,
       userAgent: String(req.headers["user-agent"] || ""),
-      aliasName: name,
-      aliasDomain: chosenDomain,
+      aliasName,
+      aliasDomain,
+      intent,
     });
 
     const ttlMinutes = Number(config.emailConfirmationTtlMinutes ?? 10);
@@ -194,7 +258,7 @@ async function subscribeAction(req, res) {
     return res.status(200).json({
       ok: true,
       action: "subscribe",
-      alias_candidate: `${name}@${domainRow.name}`,
+      alias_candidate: addressProvided ? aliasAddress : `${aliasName}@${domainRow.name}`,
       to: toParsed.email,
       confirmation: {
         sent: Boolean(result.sent),
