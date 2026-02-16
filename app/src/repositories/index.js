@@ -12,6 +12,7 @@ const { emailConfirmationsRepository } = require("./email-confirmations-reposito
 const { apiTokenRequestsRepository } = require("./api-token-requests-repository");
 const { apiTokensRepository } = require("./api-tokens-repository");
 const { apiLogsRepository } = require("./api-logs-repository");
+const { activityRepository } = require("./activity-repository");
 
 module.exports = {
   db: { getPool, query, withTx, withTransaction },
@@ -22,4 +23,5 @@ module.exports = {
   apiTokenRequestsRepository,
   apiTokensRepository,
   apiLogsRepository,
+  activityRepository,
 };

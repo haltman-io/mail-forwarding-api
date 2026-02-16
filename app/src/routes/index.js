@@ -22,7 +22,13 @@ const {
 
 const { createCredentials } = require("../controllers/api/credentials-create-controller");
 const { confirmCredentials } = require("../controllers/api/credentials-confirm-controller");
-const { listAliases, createAlias, deleteAlias } = require("../controllers/api/alias-controller");
+const {
+  listAliases,
+  aliasStats,
+  getActivity,
+  createAlias,
+  deleteAlias,
+} = require("../controllers/api/alias-controller");
 
 const router = express.Router();
 
@@ -107,6 +113,24 @@ router.get(
   listAliases
 );
 
+router.get(
+  "/api/alias/stats",
+  rateLimit.globalLimiter,
+  requireApiKey,
+  rateLimit.aliasListLimitByKey,
+  apiLogAuthenticated,
+  aliasStats
+);
+
+router.get(
+  "/api/activity",
+  rateLimit.globalLimiter,
+  requireApiKey,
+  rateLimit.aliasListLimitByKey,
+  apiLogAuthenticated,
+  getActivity
+);
+
 router.post(
   "/api/alias/create",
   rateLimit.globalLimiter,
@@ -126,4 +150,3 @@ router.post(
 );
 
 module.exports = { router };
-

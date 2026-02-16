@@ -104,6 +104,8 @@ async function unsubscribeAction(req, res) {
       email: gotoParsed.email,
       requestIpText: req.ip,
       userAgent: String(req.headers["user-agent"] || ""),
+      requestOrigin: req.get("origin") || "",
+      requestReferer: req.get("referer") || req.get("referrer") || "",
       aliasName,
       aliasDomain,
       intent: "unsubscribe",

@@ -6,7 +6,7 @@ ENVOUT="$PWD/.env.redis"
 
 echo "[*] Generating redis.conf..."
 
-PASS="$(openssl rand -base64 32 | tr -d '\n')"
+PASS="$(openssl rand -hex 32 | tr -d '\n')"
 
 cat > "$CONF" <<EOF
 bind 0.0.0.0

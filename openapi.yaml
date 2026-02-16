@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: Mail Forwarding API
+  version: 1.0.0
+  description: API hosted at https://mail.haltman.io for alias lifecycle, API-key credentials, and check-dns relay.
+servers:
+  - url: https://mail.haltman.io
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    InvalidParams:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            field: { type: string }
+            reason: { type: string }
+            hint: { type: string }
+    RateLimited:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            where: { type: string }
+            reason: { type: string }
+    AliasRow:
+      type: object
+      properties:
+        id: { type: integer }
+        address: { type: string }
+        goto: { type: string }
+        active:
+          oneOf: [{ type: integer }, { type: boolean }]
+        domain_id: { type: integer, nullable: true }
+        created: { type: string, format: date-time }
+        modified: { type: string, format: date-time }
+    Pagination:
+      type: object
+      required: [limit, offset]
+      properties:
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1 }
+        offset: { type: integer, minimum: 0 }
+    AliasListResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AliasRow' }
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    AliasStatsByDomain:
+      type: object
+      required: [domain, total, active]
+      properties:
+        domain: { type: string }
+        total: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+    AliasStatsResponse:
+      type: object
+      required: [totals, active, created_last_7d, modified_last_24h, by_domain]
+      properties:
+        totals: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+        created_last_7d: { type: integer, minimum: 0 }
+        modified_last_24h: { type: integer, minimum: 0 }
+        by_domain:
+          type: array
+          items: { $ref: '#/components/schemas/AliasStatsByDomain' }
+    ActivityItem:
+      type: object
+      required: [type, occurred_at]
+      properties:
+        type: { type: string, example: alias_create }
+        occurred_at: { type: string, format: date-time }
+        route: { type: string, nullable: true }
+        intent: { type: string, nullable: true }
+        alias: { type: string, nullable: true }
+    ActivityResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityItem' }
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+paths:
+  /domains:
+    get:
+      summary: List active managed domains
+      responses:
+        '200':
+          description: Array of domain names
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /forward/subscribe:
+    get:
+      summary: Request alias creation confirmation email
+      description: Uses either `name` + optional `domain` + `to`, or `address` + `to`.
+      parameters:
+        - { name: name, in: query, required: false, schema: { type: string } }
+        - { name: domain, in: query, required: false, schema: { type: string } }
+        - { name: address, in: query, required: false, schema: { type: string } }
+        - { name: to, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Confirmation email requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  action: { type: string, enum: [subscribe] }
+                  alias_candidate: { type: string }
+                  to: { type: string }
+                  confirmation:
+                    type: object
+                    properties:
+                      sent: { type: boolean }
+                      ttl_minutes: { type: integer }
+        '400': { description: Invalid params/business rule, content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/InvalidParams' }, { $ref: '#/components/schemas/Error' } ] } } } }
+        '403': { description: Banned, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Alias already exists, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /forward/unsubscribe:
+    get:
+      summary: Request alias removal confirmation email
+      parameters:
+        - { name: alias, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Confirmation email requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  action: { type: string, enum: [unsubscribe] }
+                  alias: { type: string }
+                  sent: { type: boolean }
+                  reason: { type: string }
+                  ttl_minutes: { type: integer }
+        '400': { description: Invalid alias or alias inactive, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Banned, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Alias not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /forward/confirm:
+    get:
+      summary: Confirm subscribe/unsubscribe token
+      parameters:
+        - { name: token, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Confirmation processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  confirmed: { type: boolean }
+                  intent: { type: string, enum: [subscribe, subscribe_address, unsubscribe] }
+                  created: { type: boolean }
+                  removed: { type: boolean }
+                  reason: { type: string }
+                  address: { type: string }
+                  goto: { type: string }
+        '400': { description: Invalid/expired token or unsupported intent, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Alias not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Alias owner changed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /request/ui:
+    post:
+      summary: Relay DNS UI request to upstream check-dns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { type: string }
+      responses:
+        '200': { description: Upstream pass-through response, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '202': { description: Upstream accepted, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '400': { description: Invalid target, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Upstream unauthorized pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '409': { description: Upstream conflict pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '415': { description: Must be application/json, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Local/upstream rate limit, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '502': { description: Upstream error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Upstream timeout, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /request/email:
+    post:
+      summary: Relay DNS email request to upstream check-dns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { type: string }
+      responses:
+        '200': { description: Upstream pass-through response, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '202': { description: Upstream accepted, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '400': { description: Invalid target, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Upstream unauthorized pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '409': { description: Upstream conflict pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '415': { description: Must be application/json, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Local/upstream rate limit, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '502': { description: Upstream error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Upstream timeout, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/checkdns/{target}:
+    get:
+      summary: Relay DNS status lookup to upstream check-dns
+      parameters:
+        - { name: target, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Upstream pass-through response, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '400': { description: Invalid target, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Upstream unauthorized pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '404': { description: Upstream not found pass-through, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '429': { description: Local/upstream rate limit, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '502': { description: Upstream error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Upstream timeout, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/credentials/create:
+    post:
+      summary: Request API key creation email
+      description: Accepts `email` and `days` in JSON body (recommended) or query string.
+      parameters:
+        - { name: email, in: query, required: false, schema: { type: string } }
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90 } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, days]
+              properties:
+                email: { type: string }
+                days: { type: integer, minimum: 1, maximum: 90 }
+      responses:
+        '200':
+          description: Confirmation request accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  action: { type: string, enum: [api_credentials_create] }
+                  email: { type: string }
+                  days: { type: integer }
+                  confirmation:
+                    type: object
+                    properties:
+                      sent: { type: boolean }
+                      ttl_minutes: { type: integer }
+                      reason: { type: string, enum: [cooldown, rate_limited] }
+                      status: { type: string, enum: [PENDING] }
+                      expires_at: { type: string, format: date-time, nullable: true }
+                      last_sent_at: { type: string, format: date-time, nullable: true }
+                      next_allowed_send_at: { type: string, format: date-time, nullable: true }
+                      send_count: { type: integer }
+                      remaining_attempts: { type: integer }
+        '400': { description: Invalid params, content: { application/json: { schema: { $ref: '#/components/schemas/InvalidParams' } } } }
+        '403': { description: Banned, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Temporary unavailable (tx_busy), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/credentials/confirm:
+    get:
+      summary: Confirm API key request and return one-time plaintext token
+      parameters:
+        - { name: token, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: API token created, content: { text/plain: { schema: { type: string } } } }
+        '400': { description: Missing token, content: { text/plain: { schema: { type: string } } } }
+        '404': { description: Invalid/expired token, content: { text/plain: { schema: { type: string } } } }
+        '409': { description: Token already used/expired, content: { text/plain: { schema: { type: string } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { text/plain: { schema: { type: string } } } }
+
+  /api/alias/list:
+    get:
+      summary: List aliases for authenticated owner
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Alias list (paginated)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AliasListResponse' }
+        '400': { description: Invalid limit/offset params, content: { application/json: { schema: { $ref: '#/components/schemas/InvalidParams' } } } }
+        '401': { description: Missing/invalid API key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/alias/stats:
+    get:
+      summary: Aggregated alias metrics for authenticated owner
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Alias stats
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AliasStatsResponse' }
+        '401': { description: Missing/invalid API key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/activity:
+    get:
+      summary: Recent authenticated activity (create/delete/confirm)
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Activity stream (paginated)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityResponse' }
+        '400': { description: Invalid limit/offset params, content: { application/json: { schema: { $ref: '#/components/schemas/InvalidParams' } } } }
+        '401': { description: Missing/invalid API key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/alias/create:
+    post:
+      summary: Create alias for authenticated owner
+      security:
+        - ApiKeyAuth: []
+      description: Accepts `alias_handle` and `alias_domain` in JSON body or query.
+      parameters:
+        - { name: alias_handle, in: query, required: false, schema: { type: string } }
+        - { name: alias_domain, in: query, required: false, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias_handle, alias_domain]
+              properties:
+                alias_handle: { type: string }
+                alias_domain: { type: string }
+      responses:
+        '200':
+          description: Alias created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  created: { type: boolean }
+                  address: { type: string }
+                  goto: { type: string }
+        '400': { description: Invalid params/domain, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Missing/invalid API key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Alias already exists, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/alias/delete:
+    post:
+      summary: Delete alias for authenticated owner
+      security:
+        - ApiKeyAuth: []
+      description: Accepts `alias` in JSON body or query.
+      parameters:
+        - { name: alias, in: query, required: false, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias]
+              properties:
+                alias: { type: string }
+      responses:
+        '200':
+          description: Alias deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  deleted: { type: boolean }
+                  alias: { type: string }
+        '400': { description: Invalid alias format, content: { application/json: { schema: { $ref: '#/components/schemas/InvalidParams' } } } }
+        '401': { description: Missing/invalid API key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Alias not owned by key owner, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Alias not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/RateLimited' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

@@ -67,6 +67,54 @@ describe("aliasRepository (schema v2)", () => {
     expect(params).toEqual(["owner@example.com"]);
   });
 
+  test("listByGoto supports pagination", async () => {
+    query.mockResolvedValue([]);
+
+    await aliasRepository.listByGoto("owner@example.com", { limit: 25, offset: 50 });
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/LIMIT \?/i);
+    expect(sql).toMatch(/OFFSET \?/i);
+    expect(params).toEqual(["owner@example.com", 25, 50]);
+  });
+
+  test("countByGoto returns numeric count", async () => {
+    query.mockResolvedValue([{ total: "12" }]);
+
+    const total = await aliasRepository.countByGoto("owner@example.com");
+
+    expect(total).toBe(12);
+  });
+
+  test("getStatsByGoto returns aggregated numbers and by_domain", async () => {
+    query
+      .mockResolvedValueOnce([
+        {
+          totals: "10",
+          active: "8",
+          created_last_7d: "3",
+          modified_last_24h: "2",
+        },
+      ])
+      .mockResolvedValueOnce([
+        { domain: "example.com", total: "6", active: "5" },
+        { domain: "example.org", total: "4", active: "3" },
+      ]);
+
+    const stats = await aliasRepository.getStatsByGoto("owner@example.com");
+
+    expect(stats).toEqual({
+      totals: 10,
+      active: 8,
+      created_last_7d: 3,
+      modified_last_24h: 2,
+      by_domain: [
+        { domain: "example.com", total: 6, active: 5 },
+        { domain: "example.org", total: 4, active: 3 },
+      ],
+    });
+  });
+
   test("createIfNotExists selects with join and inserts without domain_id", async () => {
     const conn = {
       query: jest.fn(),

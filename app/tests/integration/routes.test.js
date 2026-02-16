@@ -19,4 +19,16 @@ describe("routes", () => {
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: "missing_api_key" });
   });
+
+  test("GET /api/alias/stats without api key returns missing_api_key", async () => {
+    const res = await request(app).get("/api/alias/stats");
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "missing_api_key" });
+  });
+
+  test("GET /api/activity without api key returns missing_api_key", async () => {
+    const res = await request(app).get("/api/activity");
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "missing_api_key" });
+  });
 });

@@ -109,22 +109,91 @@ const aliasRepository = {
   /**
    * List aliases by destination (goto).
    * @param {string} goto
+   * @param {{ limit?: number, offset?: number }} [options]
    * @returns {Promise<object[]>}
    */
-  async listByGoto(goto) {
+  async listByGoto(goto, options = {}) {
     if (!goto || typeof goto !== "string") throw new Error("invalid_goto");
+    const limit = Number(options.limit);
+    const offset = Number(options.offset);
+    const hasLimit = Number.isInteger(limit) && limit > 0;
+    const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
 
-    const rows = await query(
-      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+    const normalizedGoto = goto.trim().toLowerCase();
+    const sqlBase = `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
          ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
        WHERE a.goto = ?
-       ORDER BY a.id DESC`,
-      [goto.trim().toLowerCase()]
-    );
+       ORDER BY a.id DESC`;
+    const rows = hasLimit
+      ? await query(`${sqlBase} LIMIT ? OFFSET ?`, [normalizedGoto, limit, safeOffset])
+      : await query(sqlBase, [normalizedGoto]);
 
     return rows;
+  },
+
+  /**
+   * Count aliases by destination (goto).
+   * @param {string} goto
+   * @returns {Promise<number>}
+   */
+  async countByGoto(goto) {
+    if (!goto || typeof goto !== "string") throw new Error("invalid_goto");
+    const rows = await query(
+      `SELECT COUNT(*) AS total
+       FROM alias
+       WHERE goto = ?`,
+      [goto.trim().toLowerCase()]
+    );
+    return Number(rows[0]?.total ?? 0);
+  },
+
+  /**
+   * Build alias stats by destination (goto).
+   * @param {string} goto
+   * @returns {Promise<{ totals: number, active: number, created_last_7d: number, modified_last_24h: number, by_domain: Array<{ domain: string, total: number, active: number }> }>}
+   */
+  async getStatsByGoto(goto) {
+    if (!goto || typeof goto !== "string") throw new Error("invalid_goto");
+    const normalizedGoto = goto.trim().toLowerCase();
+
+    const totalsRows = await query(
+      `SELECT
+          COUNT(*) AS totals,
+          SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS active,
+          SUM(CASE WHEN created >= NOW() - INTERVAL 7 DAY THEN 1 ELSE 0 END) AS created_last_7d,
+          SUM(CASE WHEN modified >= NOW() - INTERVAL 24 HOUR THEN 1 ELSE 0 END) AS modified_last_24h
+       FROM alias
+       WHERE goto = ?`,
+      [normalizedGoto]
+    );
+
+    const domainsRows = await query(
+      `SELECT
+          SUBSTRING_INDEX(address, '@', -1) AS domain,
+          COUNT(*) AS total,
+          SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS active
+       FROM alias
+       WHERE goto = ?
+       GROUP BY domain
+       ORDER BY total DESC, domain ASC`,
+      [normalizedGoto]
+    );
+
+    const totals = totalsRows[0] || {};
+
+    return {
+      totals: Number(totals.totals ?? 0),
+      active: Number(totals.active ?? 0),
+      created_last_7d: Number(totals.created_last_7d ?? 0),
+      modified_last_24h: Number(totals.modified_last_24h ?? 0),
+      by_domain: domainsRows.map((row) => ({
+        domain: String(row.domain || ""),
+        total: Number(row.total ?? 0),
+        active: Number(row.active ?? 0),
+      })),
+    };
   },
 
   /**

@@ -9,8 +9,13 @@ const nodemailer = require("nodemailer");
 
 const { config } = require("../config");
 const { emailConfirmationsRepository } = require("../repositories/email-confirmations-repository");
+const { domainRepository } = require("../repositories/domain-repository");
+const { normalizeDomainTarget } = require("../lib/domain-validation");
 
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const DOMAINS_CACHE_TTL_MS = 10_000;
+
+let domainsCache = { at: 0, data: null };
 
 /**
  * Generate a Base62 token with unbiased entropy.
@@ -53,17 +58,95 @@ function assertIntent(intent) {
   return value;
 }
 
+function getDefaultConfirmBaseUrl() {
+  const base = String(config.appPublicUrl || "").trim().replace(/\/+$/, "");
+  if (!base) throw new Error("missing_APP_PUBLIC_URL");
+  return base;
+}
+
+/**
+ * Parse and validate an incoming URL header (Origin/Referer).
+ * @param {string | undefined | null} raw
+ * @returns {{ origin: string, domain: string } | null}
+ */
+function parseHeaderOriginCandidate(raw) {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return null;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+
+    const normalized = normalizeDomainTarget(parsed.hostname);
+    if (!normalized.ok || !normalized.value) return null;
+
+    return { origin: parsed.origin.replace(/\/+$/, ""), domain: normalized.value };
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * @returns {Promise<Set<string>>}
+ */
+async function getActiveDomainSetCached() {
+  const now = Date.now();
+  if (domainsCache.data && now - domainsCache.at < DOMAINS_CACHE_TTL_MS) {
+    return domainsCache.data;
+  }
+
+  const names = await domainRepository.listActiveNames();
+  const set = new Set();
+
+  for (const name of names) {
+    const normalized = normalizeDomainTarget(name);
+    if (normalized.ok && normalized.value) set.add(normalized.value);
+  }
+
+  domainsCache = { at: now, data: set };
+  return set;
+}
+
+/**
+ * Resolve the base URL to be used in confirmation links.
+ * Falls back to APP_PUBLIC_URL on any failure.
+ * @param {{ requestOrigin?: string, requestReferer?: string }} headers
+ * @returns {Promise<string>}
+ */
+async function resolveConfirmBaseUrl({ requestOrigin, requestReferer }) {
+  const fallback = getDefaultConfirmBaseUrl();
+
+  try {
+    const candidates = [requestOrigin, requestReferer]
+      .map((value) => parseHeaderOriginCandidate(value))
+      .filter(Boolean);
+
+    if (candidates.length === 0) return fallback;
+
+    const activeDomains = await getActiveDomainSetCached();
+    for (const candidate of candidates) {
+      if (activeDomains.has(candidate.domain)) {
+        return candidate.origin;
+      }
+    }
+  } catch (_) {
+    return fallback;
+  }
+
+  return fallback;
+}
+
 /**
  * @param {string} token
+ * @param {string} [baseUrl]
  * @returns {string}
  */
-function buildConfirmUrl(token) {
-  const base = String(config.appPublicUrl || "").trim().replace(/\/+$/, "");
+function buildConfirmUrl(token, baseUrl) {
+  const base = String(baseUrl || "").trim().replace(/\/+$/, "") || getDefaultConfirmBaseUrl();
   const endpoint = String(config.emailConfirmEndpoint || "/forward/confirm")
     .trim()
     .replace(/^\/?/, "/");
-
-  if (!base) throw new Error("missing_APP_PUBLIC_URL");
 
   return `${base}${endpoint}?token=${encodeURIComponent(token)}`;
 }
@@ -100,9 +183,20 @@ function makeTransport() {
  * @param {string} payload.aliasName
  * @param {string} payload.aliasDomain
  * @param {string} [payload.intent]
+ * @param {string} [payload.requestOrigin]
+ * @param {string} [payload.requestReferer]
  * @returns {Promise<{ ok: boolean, sent: boolean, reason?: string, ttl_minutes: number }>}
  */
-async function sendEmailConfirmation({ email, requestIpText, userAgent, aliasName, aliasDomain, intent }) {
+async function sendEmailConfirmation({
+  email,
+  requestIpText,
+  userAgent,
+  aliasName,
+  aliasDomain,
+  intent,
+  requestOrigin,
+  requestReferer,
+}) {
   const to = normalizeEmailStrict(email);
   if (!to) throw new Error("invalid_email");
 
@@ -157,7 +251,11 @@ async function sendEmailConfirmation({ email, requestIpText, userAgent, aliasNam
     });
   }
 
-  const confirmUrl = buildConfirmUrl(token);
+  const confirmBaseUrl = await resolveConfirmBaseUrl({
+    requestOrigin,
+    requestReferer,
+  });
+  const confirmUrl = buildConfirmUrl(token, confirmBaseUrl);
 
   const from = String(config.smtpFrom || "").trim();
   if (!from) throw new Error("missing_SMTP_FROM");
@@ -169,6 +267,17 @@ async function sendEmailConfirmation({ email, requestIpText, userAgent, aliasNam
 
   const actionLabel =
     intentNormalized === "unsubscribe" ? "remove this alias" : "create this alias";
+
+  const CUSTOM_TENANT_FQDN = (() => {
+    try {
+      return new URL(confirmBaseUrl).hostname || "";
+    } catch (_) {
+      return String(confirmBaseUrl || "")
+        .trim()
+        .replace(/^https?:\/\//i, "")
+        .replace(/\/.*$/, "");
+    }
+  })();
 
   const text =
     `Confirm your email address to ${actionLabel}.\n\n` +
@@ -255,7 +364,7 @@ async function sendEmailConfirmation({ email, requestIpText, userAgent, aliasNam
                             color:rgba(255,255,255,0.70);
                             white-space:nowrap;
                           ">
-                            forward.haltman.io
+                            ${CUSTOM_TENANT_FQDN}
                           </span>
                         </td>
                       </tr>
@@ -539,4 +648,10 @@ async function sendEmailConfirmation({ email, requestIpText, userAgent, aliasNam
   return { ok: true, sent: true, to, ttl_minutes: ttlMinutes };
 }
 
-module.exports = { sendEmailConfirmation, generateBase62Token, sha256Buffer };
+module.exports = {
+  sendEmailConfirmation,
+  generateBase62Token,
+  sha256Buffer,
+  buildConfirmUrl,
+  resolveConfirmBaseUrl,
+};
