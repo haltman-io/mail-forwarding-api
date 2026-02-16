@@ -7,22 +7,23 @@
 const crypto = require("crypto");
 const { query, withTx } = require("./db");
 const { packIp16 } = require("../lib/ip-pack");
-
-const RE_ALIAS_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
-const RE_DOMAIN =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const {
+  normalizeLowerTrim,
+  isValidLocalPart,
+  isValidDomain,
+} = require("../lib/mailbox-validation");
 
 function assertAliasName(name) {
   if (typeof name !== "string") throw new Error("invalid_alias_name");
-  const value = name.trim().toLowerCase();
-  if (!RE_ALIAS_NAME.test(value)) throw new Error("invalid_alias_name");
+  const value = normalizeLowerTrim(name);
+  if (!isValidLocalPart(value)) throw new Error("invalid_alias_name");
   return value;
 }
 
 function assertDomain(domain) {
   if (typeof domain !== "string") throw new Error("invalid_alias_domain");
-  const value = domain.trim().toLowerCase();
-  if (!RE_DOMAIN.test(value)) throw new Error("invalid_alias_domain");
+  const value = normalizeLowerTrim(domain);
+  if (!isValidDomain(value)) throw new Error("invalid_alias_domain");
   return value;
 }
 

@@ -8,31 +8,27 @@ const { bansRepository } = require("../../repositories/bans-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { sendEmailConfirmation } = require("../../services/email-confirmation-service");
 const { logError } = require("../../lib/logger");
-
-const RE_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
-const RE_DOMAIN =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,63}$/;
+const {
+  MAX_EMAIL_LENGTH,
+  normalizeLowerTrim,
+  isValidLocalPart,
+  isValidDomain,
+  parseMailbox,
+} = require("../../lib/mailbox-validation");
 
 function normStr(value) {
-  if (typeof value !== "string") return "";
-  return value.trim();
+  return normalizeLowerTrim(value);
 }
 
 function isValidName(value) {
-  return RE_NAME.test(value);
+  return isValidLocalPart(value);
 }
 
-function isValidDomain(value) {
-  return RE_DOMAIN.test(value);
-}
-
-function parseEmailStrict(emailRaw) {
+function parseEmailLoose(emailRaw) {
   const email = normStr(emailRaw).toLowerCase();
-  if (!email || email.length > 254) return null;
-  if (!RE_EMAIL.test(email)) return null;
+  if (!email || email.length > MAX_EMAIL_LENGTH) return null;
   const at = email.lastIndexOf("@");
-  if (at <= 0 || at === email.length - 1) return null;
+  if (at <= 0 || at === email.length - 1 || email.indexOf("@") !== at) return null;
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
   return { email, local, domain };
@@ -50,7 +46,7 @@ function getClientIp(req) {
 async function unsubscribeAction(req, res) {
   try {
     const aliasRaw = req.query?.alias || "";
-    const aliasParsed = parseEmailStrict(aliasRaw);
+    const aliasParsed = parseEmailLoose(aliasRaw);
     const clientIp = getClientIp(req);
 
     if (!aliasParsed) {
@@ -84,7 +80,7 @@ async function unsubscribeAction(req, res) {
     }
 
     const gotoEmail = String(aliasRow.goto || "").trim().toLowerCase();
-    const gotoParsed = parseEmailStrict(gotoEmail);
+    const gotoParsed = parseMailbox(gotoEmail);
 
     if (!gotoParsed) {
       return res.status(500).json({ error: "invalid_goto_on_alias", alias: address });

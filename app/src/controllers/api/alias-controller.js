@@ -8,34 +8,25 @@ const { domainRepository } = require("../../repositories/domain-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { activityRepository } = require("../../repositories/activity-repository");
 const { logError } = require("../../lib/logger");
-
-const RE_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
-const RE_DOMAIN =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const {
+  normalizeLowerTrim,
+  isValidLocalPart,
+  isValidDomain,
+  parseMailbox,
+} = require("../../lib/mailbox-validation");
 
 function normStr(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase();
+  return normalizeLowerTrim(value);
 }
 
 function isValidName(name) {
-  return RE_NAME.test(name);
-}
-
-function isValidDomain(domain) {
-  return RE_DOMAIN.test(domain);
+  return isValidLocalPart(name);
 }
 
 function parseAliasEmail(raw) {
-  const value = normStr(raw);
-  const at = value.indexOf("@");
-  if (at <= 0) return null;
-  if (value.indexOf("@", at + 1) !== -1) return null;
-  const local = value.slice(0, at);
-  const domain = value.slice(at + 1);
-  if (!isValidName(local)) return null;
-  if (!isValidDomain(domain)) return null;
-  return { address: `${local}@${domain}`, local, domain };
+  const parsed = parseMailbox(raw);
+  if (!parsed) return null;
+  return { address: parsed.email, local: parsed.local, domain: parsed.domain };
 }
 
 function parsePagination(req, { defaultLimit = 50, maxLimit = 200 } = {}) {

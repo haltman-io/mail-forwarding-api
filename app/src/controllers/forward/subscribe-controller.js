@@ -10,41 +10,19 @@ const { bansRepository } = require("../../repositories/bans-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { sendEmailConfirmation } = require("../../services/email-confirmation-service");
 const { logError } = require("../../lib/logger");
-
-const RE_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
-const RE_DOMAIN =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const RE_EMAIL_LOCAL = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
-const MAX_EMAIL_LEN = 254;
+const {
+  normalizeLowerTrim,
+  isValidLocalPart,
+  isValidDomain,
+  parseMailbox,
+} = require("../../lib/mailbox-validation");
 
 function normStr(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase();
+  return normalizeLowerTrim(value);
 }
 
 function isValidName(name) {
-  return RE_NAME.test(name);
-}
-
-function isValidDomain(domain) {
-  return RE_DOMAIN.test(domain);
-}
-
-function parseEmailStrict(email) {
-  const value = normStr(email);
-  if (!value || value.length > MAX_EMAIL_LEN) return null;
-
-  const at = value.indexOf("@");
-  if (at <= 0) return null;
-  if (value.indexOf("@", at + 1) !== -1) return null;
-
-  const local = value.slice(0, at);
-  const domain = value.slice(at + 1);
-
-  if (!RE_EMAIL_LOCAL.test(local)) return null;
-  if (!isValidDomain(domain)) return null;
-
-  return { email: value, local, domain };
+  return isValidLocalPart(name);
 }
 
 function domainSuffixes(domain) {
@@ -94,12 +72,12 @@ async function subscribeAction(req, res) {
 
     if (!toRaw) return res.status(400).json({ error: "invalid_params", field: "to" });
 
-    const toParsed = parseEmailStrict(toRaw);
+    const toParsed = parseMailbox(toRaw);
     if (!toParsed) {
       return res.status(400).json({
         error: "invalid_params",
         field: "to",
-        hint: "allowed local: a-z 0-9 dot underscore hyphen; domain: strict DNS; lowercase",
+        hint: "allowed local: RFC 5322 dot-atom; domain: strict DNS (RFC 1035); lowercase",
       });
     }
 
@@ -110,12 +88,12 @@ async function subscribeAction(req, res) {
     let intent = "subscribe";
 
     if (addressProvided) {
-      const addressParsed = parseEmailStrict(addressRaw);
+      const addressParsed = parseMailbox(addressRaw);
       if (!addressParsed) {
         return res.status(400).json({
           error: "invalid_params",
           field: "address",
-          hint: "expected: valid email address (local: a-z 0-9 dot underscore hyphen; domain: strict DNS)",
+          hint: "expected: valid email address (local: RFC 5322 dot-atom; domain: strict DNS RFC 1035)",
         });
       }
 
@@ -133,7 +111,7 @@ async function subscribeAction(req, res) {
         return res.status(400).json({
           error: "invalid_params",
           field: "name",
-          hint: "allowed: a-z 0-9 dot; cannot start/end with dot; max 64",
+          hint: "allowed: RFC 5322 dot-atom local-part; max 64",
         });
       }
 
