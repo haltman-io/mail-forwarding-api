@@ -10,6 +10,10 @@ const { apiTokensRepository } = require("../../repositories/api-tokens-repositor
 const { sha256Buffer } = require("../../services/api-credentials-email-service");
 const { packIp16 } = require("../../lib/ip-pack");
 const { logError } = require("../../lib/logger");
+const {
+  normalizeConfirmationCode,
+  isConfirmationCodeValid,
+} = require("../../lib/confirmation-code");
 
 function generateApiToken64() {
   return crypto.randomBytes(32).toString("hex");
@@ -22,8 +26,9 @@ function generateApiToken64() {
  */
 async function confirmCredentials(req, res) {
   try {
-    const token = String(req.query?.token || "").trim();
+    const token = normalizeConfirmationCode(req.query?.token || "");
     if (!token) return res.status(400).send("Missing token.");
+    if (!isConfirmationCodeValid(token)) return res.status(400).send("Invalid token.");
 
     const tokenHash32 = sha256Buffer(token);
     const pending = await apiTokenRequestsRepository.getPendingByTokenHash(tokenHash32);

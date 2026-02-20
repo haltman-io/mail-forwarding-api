@@ -6,13 +6,14 @@
 
 const crypto = require("crypto");
 
-const { config } = require("../../config");
 const { emailConfirmationsRepository } = require("../../repositories/email-confirmations-repository");
 const { domainRepository } = require("../../repositories/domain-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { logError } = require("../../lib/logger");
-
-const RE_BASE62 = /^[0-9A-Za-z]+$/;
+const {
+  normalizeConfirmationCode,
+  isConfirmationCodeValid,
+} = require("../../lib/confirmation-code");
 
 /**
  * @param {string} value
@@ -22,23 +23,6 @@ function sha256Buffer(value) {
   return crypto.createHash("sha256").update(value, "utf8").digest();
 }
 
-function normalizeToken(value) {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
-
-function tokenLooksValid(token) {
-  const minLen = Number(config.emailConfirmationTokenMinLen ?? 10);
-  const maxLen = Number(config.emailConfirmationTokenMaxLen ?? 24);
-  const min = Number.isFinite(minLen) ? minLen : 10;
-  const max = Number.isFinite(maxLen) ? maxLen : 24;
-
-  if (!token) return false;
-  if (token.length < min || token.length > max) return false;
-  if (!RE_BASE62.test(token)) return false;
-  return true;
-}
-
 /**
  * GET /forward/confirm?token=...
  * @param {import("express").Request} req
@@ -46,8 +30,8 @@ function tokenLooksValid(token) {
  */
 async function confirmAction(req, res) {
   try {
-    const token = normalizeToken(req.query?.token || "");
-    if (!tokenLooksValid(token)) {
+    const token = normalizeConfirmationCode(req.query?.token || "");
+    if (!isConfirmationCodeValid(token)) {
       return res.status(400).json({ ok: false, error: "invalid_token" });
     }
 

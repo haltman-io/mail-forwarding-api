@@ -6,10 +6,8 @@
 
 const crypto = require("crypto");
 const { query, withTx } = require("./db");
+const { generateConfirmationCode } = require("../lib/confirmation-code");
 
-const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const MIN_TOKEN_LEN = 12;
-const MAX_TOKEN_LEN = 64;
 const DEFAULT_RETRY_MAX = 2;
 const RETRY_MIN_DELAY_MS = 25;
 const RETRY_MAX_DELAY_MS = 120;
@@ -32,28 +30,6 @@ function isRetryableTxError(err) {
 
 function randomIntBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/**
- * Generate a Base62 token with unbiased entropy.
- * @param {number} len
- * @returns {string}
- */
-function generateBase62Token(len = 20) {
-  const size = Number(len);
-  if (!Number.isFinite(size) || size < MIN_TOKEN_LEN || size > MAX_TOKEN_LEN) {
-    throw new Error("invalid_token_length");
-  }
-
-  const out = [];
-  while (out.length < size) {
-    const buf = crypto.randomBytes(32);
-    for (let i = 0; i < buf.length && out.length < size; i++) {
-      const x = buf[i];
-      if (x < 248) out.push(BASE62[x % 62]);
-    }
-  }
-  return out.join("");
 }
 
 /**
@@ -83,14 +59,6 @@ function normalizeCooldownSeconds(value) {
 function normalizeMaxSendCount(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0 || num > 20) return 3;
-  return Math.floor(num);
-}
-
-function normalizeTokenLength(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < MIN_TOKEN_LEN || num > MAX_TOKEN_LEN) {
-    return 20;
-  }
   return Math.floor(num);
 }
 
@@ -231,12 +199,10 @@ const apiTokenRequestsRepository = {
     maxSendCount,
     requestIpPacked,
     userAgentOrNull,
-    tokenLength,
   }) {
     const ttl = assertTtlMinutes(ttlMinutes);
     const cooldown = normalizeCooldownSeconds(cooldownSeconds);
     const maxSends = normalizeMaxSendCount(maxSendCount);
-    const tokenLen = normalizeTokenLength(tokenLength);
 
     return withTxRetry(async (conn) => {
       await conn.query(
@@ -285,7 +251,7 @@ const apiTokenRequestsRepository = {
         }
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          const tokenPlain = generateBase62Token(tokenLen);
+          const tokenPlain = generateConfirmationCode();
           const tokenHash32 = sha256Buffer(tokenPlain);
           try {
             await conn.query(
@@ -317,7 +283,7 @@ const apiTokenRequestsRepository = {
       }
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const tokenPlain = generateBase62Token(tokenLen);
+        const tokenPlain = generateConfirmationCode();
         const tokenHash32 = sha256Buffer(tokenPlain);
 
         try {

@@ -73,9 +73,6 @@ async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent 
   const cooldownSec = Number(config.apiCredentialsEmailResendCooldownSeconds ?? 60);
   const cooldownSeconds = Number.isFinite(cooldownSec) && cooldownSec >= 0 ? cooldownSec : 60;
 
-  const tokenLen = Number(config.apiCredentialsEmailTokenLen ?? 20);
-  const tokenLength = Number.isFinite(tokenLen) && tokenLen >= 12 && tokenLen <= 64 ? tokenLen : 20;
-
   const maxSendRaw = Number(config.apiCredentialsEmailMaxSends ?? 3);
   const maxSendCount = Number.isFinite(maxSendRaw) && maxSendRaw > 0 ? maxSendRaw : 3;
 
@@ -90,7 +87,6 @@ async function sendApiTokenRequestEmail({ email, days, requestIpText, userAgent 
     maxSendCount,
     requestIpPacked,
     userAgentOrNull: ua || null,
-    tokenLength,
   });
 
   if (result.action === "cooldown" || result.action === "rate_limited") {
