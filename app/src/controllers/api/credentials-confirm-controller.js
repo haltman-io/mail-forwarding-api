@@ -27,16 +27,16 @@ function generateApiToken64() {
 async function confirmCredentials(req, res) {
   try {
     const token = normalizeConfirmationCode(req.query?.token || "");
-    if (!token) return res.status(400).send("Missing token.");
-    if (!isConfirmationCodeValid(token)) return res.status(400).send("Invalid token.");
+    if (!token) return res.status(400).json({ error: "invalid_params", field: "token" });
+    if (!isConfirmationCodeValid(token)) return res.status(400).json({ error: "invalid_token" });
 
     const tokenHash32 = sha256Buffer(token);
     const pending = await apiTokenRequestsRepository.getPendingByTokenHash(tokenHash32);
 
-    if (!pending) return res.status(404).send("Invalid or expired token.");
+    if (!pending) return res.status(400).json({ error: "invalid_or_expired" });
 
     const okConfirm = await apiTokenRequestsRepository.markConfirmedById(pending.id);
-    if (!okConfirm) return res.status(409).send("Token already used or expired.");
+    if (!okConfirm) return res.status(400).json({ error: "invalid_or_expired" });
 
     const apiToken = generateApiToken64();
     const apiTokenHash32 = sha256Buffer(apiToken);
@@ -55,11 +55,18 @@ async function confirmCredentials(req, res) {
       userAgentOrNull: ua || null,
     });
 
-    res.set("Content-Type", "text/plain; charset=utf-8");
-    return res.status(200).send(`Your API Token: ${apiToken}\n`);
+    return res.status(200).json({
+      ok: true,
+      action: "api_credentials_confirm",
+      confirmed: true,
+      email: String(pending.email).trim().toLowerCase(),
+      token: apiToken,
+      token_type: "api_key",
+      expires_in_days: expiresAtDays,
+    });
   } catch (err) {
     logError("api.confirmCredentials.error", err, req);
-    return res.status(500).send("Internal error.");
+    return res.status(500).json({ error: "internal_error" });
   }
 }
 

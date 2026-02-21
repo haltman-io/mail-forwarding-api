@@ -17,7 +17,7 @@ Scope:
 
 ### Shared response patterns
 - Most API endpoints return JSON (`res.json(...)`).
-- `GET /api/credentials/confirm` returns plain text (`text/plain; charset=utf-8`), not JSON.
+- `GET /api/credentials/confirm` returns JSON (`application/json`), including success payload with generated API key.
 - Redirects use Express default redirect status (`302`) when `res.redirect(...)` is used.
 - Unhandled errors go through `errorHandler` and return:
 
@@ -206,18 +206,18 @@ Required params:
 - `token` (query, required, 6-digit code)
 
 Response content type:
-- Success: `text/plain; charset=utf-8`
-- Errors: plain text strings
+- Success: `application/json`
+- Errors: `application/json`
 
 ### Responses
 | Status | Indicator | Response schema | Additional data |
 |---|---|---|---|
-| 200 | `SUCCESS` | `"Your API Token: <64-hex-token>\\n"` | Plain text response body. |
-| 400 | `VALIDATION_ERROR` | `"Missing token."` or `"Invalid token."` | Plain text response body. |
-| 404 | `NOT_FOUND` | `"Invalid or expired token."` | Plain text response body. |
-| 409 | `CONFLICT` | `"Token already used or expired."` | Plain text response body. |
+| 200 | `SUCCESS` | `{ "ok": true, "action": "api_credentials_confirm", "confirmed": true, "email": "string", "token": "64-hex-string", "token_type": "api_key", "expires_in_days": "number" }` | Returns the generated API key once, in JSON. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "token" }` | Missing token parameter. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_token" }` | Invalid token format. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_or_expired" }` | Token missing from pending records or no longer valid (including already-used token). |
 | 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_requests_ip`, `too_many_requests_token` (`where: credentials_confirm`). |
-| 500 | `SERVER_ERROR` | `"Internal error."` | Plain text response body. |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
 
 ## `GET /api/alias/list`
 Middlewares: global rate limit + `requireApiKey` + alias list rate limit + API log middleware
