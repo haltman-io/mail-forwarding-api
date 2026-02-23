@@ -25,6 +25,15 @@ const rateLimitHelpers = {
   },
 
   /**
+   * Normalize POST body email values (default field: "email").
+   * @param {import("express").Request} req
+   * @param {string} [field]
+   * @returns {string}
+   */
+  normalizeBodyEmail: (req, field = "email") =>
+    rateLimitHelpers.normalizeEmail(req.body?.[field] || req.query?.[field] || ""),
+
+  /**
    * @param {import("express").Request} req
    * @returns {string}
    */
@@ -56,6 +65,13 @@ const rateLimitHelpers = {
    */
   normalizeGetToken: (req) =>
     rateLimitHelpers.normalizeString(req.query?.token || req.params?.token || ""),
+
+  /**
+   * Normalize admin login email from request body/query.
+   * @param {import("express").Request} req
+   * @returns {string}
+   */
+  normalizeAdminLoginEmail: (req) => rateLimitHelpers.normalizeBodyEmail(req, "email"),
 };
 
 module.exports = { rateLimitHelpers };

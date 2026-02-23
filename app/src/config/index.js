@@ -75,6 +75,10 @@ const dotenv = require("dotenv");
  * @property {number} rlCredentialsCreatePerHourPerEmail
  * @property {number} rlCredentialsConfirmPer10MinPerIp
  * @property {number} rlCredentialsConfirmPer10MinPerToken
+ * @property {number} rlAdminLoginFailPer15MinPerIp
+ * @property {number} rlAdminLoginFailPerHourPerEmail
+ * @property {number} rlAdminLoginFailPer6HoursPerEmailIp
+ * @property {number} rlAdminLoginFailPer5MinPerEmailIp
  * @property {number} rlAliasListPerMinPerKey
  * @property {number} rlAliasCreatePerMinPerKey
  * @property {number} rlAliasDeletePerMinPerKey
@@ -85,6 +89,18 @@ const dotenv = require("dotenv");
  * @property {number} apiCredentialsEmailTokenLen
  * @property {number} apiCredentialsEmailMaxSends
  * @property {string} apiCredentialsEmailSubject
+ * @property {number} adminAuthSessionTtlMinutes
+ * @property {number} adminAuthTokenBytes
+ * @property {string} adminAuthDummyPasswordHash
+ * @property {number} adminAuthArgon2TimeCost
+ * @property {number} adminAuthArgon2MemoryCost
+ * @property {number} adminAuthArgon2Parallelism
+ * @property {number} adminAuthArgon2HashLength
+ * @property {number} adminAuthArgon2SaltLength
+ * @property {boolean} adminLoginEmailEnabled
+ * @property {string} adminLoginEmailSubject
+ * @property {boolean} adminUserChangeEmailEnabled
+ * @property {string} adminUserChangeEmailSubject
  */
 
 /**
@@ -285,6 +301,12 @@ function buildConfig(meta) {
     rlCredentialsConfirmPer10MinPerIp: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_IP", 60),
     rlCredentialsConfirmPer10MinPerToken: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_TOKEN", 5),
 
+    // admin login (failed attempts only)
+    rlAdminLoginFailPer15MinPerIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_15MIN_PER_IP", 12),
+    rlAdminLoginFailPerHourPerEmail: getInt("RL_ADMIN_LOGIN_FAIL_PER_HOUR_PER_EMAIL", 6),
+    rlAdminLoginFailPer6HoursPerEmailIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_6H_PER_EMAIL_IP", 3),
+    rlAdminLoginFailPer5MinPerEmailIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_5MIN_PER_EMAIL_IP", 2),
+
     // alias (authenticated)
     rlAliasListPerMinPerKey: getInt("RL_ALIAS_LIST_PER_MIN_PER_KEY", 600),
     rlAliasCreatePerMinPerKey: getInt("RL_ALIAS_CREATE_PER_MIN_PER_KEY", 120),
@@ -306,6 +328,25 @@ function buildConfig(meta) {
     apiCredentialsEmailSubject: getString(
       "API_CREDENTIALS_EMAIL_SUBJECT",
       "Your API token request"
+    ),
+
+    adminAuthSessionTtlMinutes: getInt("ADMIN_AUTH_SESSION_TTL_MINUTES", 12 * 60),
+    adminAuthTokenBytes: getInt("ADMIN_AUTH_TOKEN_BYTES", 32),
+    adminAuthDummyPasswordHash: getString("ADMIN_AUTH_DUMMY_PASSWORD_HASH", ""),
+    adminAuthArgon2TimeCost: getInt("ADMIN_AUTH_ARGON2_TIME_COST", 4),
+    adminAuthArgon2MemoryCost: getInt("ADMIN_AUTH_ARGON2_MEMORY_COST", 128 * 1024),
+    adminAuthArgon2Parallelism: getInt("ADMIN_AUTH_ARGON2_PARALLELISM", 1),
+    adminAuthArgon2HashLength: getInt("ADMIN_AUTH_ARGON2_HASH_LENGTH", 32),
+    adminAuthArgon2SaltLength: getInt("ADMIN_AUTH_ARGON2_SALT_LENGTH", 16),
+    adminLoginEmailEnabled: getBool("ADMIN_LOGIN_EMAIL_ENABLED", true),
+    adminLoginEmailSubject: getString(
+      "ADMIN_LOGIN_EMAIL_SUBJECT",
+      "Security alert: admin login | {host}"
+    ),
+    adminUserChangeEmailEnabled: getBool("ADMIN_USER_CHANGE_EMAIL_ENABLED", true),
+    adminUserChangeEmailSubject: getString(
+      "ADMIN_USER_CHANGE_EMAIL_SUBJECT",
+      "Security alert: admin account changed | {host}"
     ),
   };
 }

@@ -56,6 +56,18 @@ describe("aliasRepository (schema v2)", () => {
     expect(sql).toMatch(/AS domain_id/i);
   });
 
+  test("existsReservedHandle checks alias_handle active flag", async () => {
+    query.mockResolvedValueOnce([{ ok: 1 }]);
+
+    const taken = await aliasRepository.existsReservedHandle("Root");
+
+    expect(taken).toBe(true);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/FROM alias_handle/i);
+    expect(sql).toMatch(/active = 1/i);
+    expect(params).toEqual(["root"]);
+  });
+
   test("listByGoto selects domain_id via join", async () => {
     query.mockResolvedValue([]);
 

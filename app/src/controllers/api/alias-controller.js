@@ -157,6 +157,11 @@ async function createAlias(req, res) {
 
     const address = `${aliasHandle}@${aliasDomain}`;
 
+    const reservedHandle = await aliasRepository.existsReservedHandle(aliasHandle);
+    if (reservedHandle) {
+      return res.status(409).json({ ok: false, error: "alias_taken", address });
+    }
+
     const created = await aliasRepository.createIfNotExists({
       address,
       goto: owner,

@@ -15,6 +15,7 @@ const slowDown = require("express-slow-down");
 
 const globalLimit = Number(config.rlGlobalPerMin ?? 300);
 const keyByIp = (req) => ipKeyGenerator(req.ip);
+const is2xxResponse = (req, res) => res.statusCode >= 200 && res.statusCode < 300;
 
 /** @type {import('redis').RedisClientType | null} */
 let redisClient = null;
@@ -459,6 +460,101 @@ const rateLimit = {
         },
       },
       "cred_confirm_token"
+    );
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // /admin/login (anti brute-force)
+  // Counts only failed attempts (non-2xx).
+  // ───────────────────────────────────────────────────────────────────────────
+  get adminLoginFailByIp() {
+    return createRateLimiter(
+      {
+        windowMs: 15 * 60 * 1000,
+        limit: Number(config.rlAdminLoginFailPer15MinPerIp ?? 12),
+        skip: () => Number(config.rlAdminLoginFailPer15MinPerIp ?? 12) === 0,
+        skipSuccessfulRequests: true,
+        requestWasSuccessful: is2xxResponse,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: { error: "rate_limited", where: "admin_login", reason: "too_many_failed_attempts_ip" },
+        keyGenerator: keyByIp,
+      },
+      "admin_login_fail_ip"
+    );
+  },
+
+  get adminLoginFailByEmail() {
+    return createRateLimiter(
+      {
+        windowMs: 60 * 60 * 1000,
+        limit: Number(config.rlAdminLoginFailPerHourPerEmail ?? 6),
+        skip: () => Number(config.rlAdminLoginFailPerHourPerEmail ?? 6) === 0,
+        skipSuccessfulRequests: true,
+        requestWasSuccessful: is2xxResponse,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "admin_login",
+          reason: "too_many_failed_attempts_email",
+        },
+        keyGenerator: (req) => {
+          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
+          return `admin_login_email:${email || "missing"}`;
+        },
+      },
+      "admin_login_fail_email"
+    );
+  },
+
+  get adminLoginFailHardByEmailIp() {
+    return createRateLimiter(
+      {
+        windowMs: 6 * 60 * 60 * 1000,
+        limit: Number(config.rlAdminLoginFailPer6HoursPerEmailIp ?? 3),
+        skip: () => Number(config.rlAdminLoginFailPer6HoursPerEmailIp ?? 3) === 0,
+        skipSuccessfulRequests: true,
+        requestWasSuccessful: is2xxResponse,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "admin_login",
+          reason: "too_many_failed_attempts_email_ip_heavy",
+        },
+        keyGenerator: (req) => {
+          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
+          const ip = keyByIp(req);
+          return `admin_login_heavy:${email || "missing"}:${ip}`;
+        },
+      },
+      "admin_login_fail_heavy_email_ip"
+    );
+  },
+
+  get adminLoginFailFastByEmailIp() {
+    return createRateLimiter(
+      {
+        windowMs: 5 * 60 * 1000,
+        limit: Number(config.rlAdminLoginFailPer5MinPerEmailIp ?? 2),
+        skip: () => Number(config.rlAdminLoginFailPer5MinPerEmailIp ?? 2) === 0,
+        skipSuccessfulRequests: true,
+        requestWasSuccessful: is2xxResponse,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "admin_login",
+          reason: "too_many_failed_attempts_email_ip",
+        },
+        keyGenerator: (req) => {
+          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
+          const ip = keyByIp(req);
+          return `admin_login_fast:${email || "missing"}:${ip}`;
+        },
+      },
+      "admin_login_fail_fast_email_ip"
     );
   },
 

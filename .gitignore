@@ -1,2 +1,4 @@
 app/redis.conf
 @dev-env/1.md
+login_schema.sql
+api-routes.md

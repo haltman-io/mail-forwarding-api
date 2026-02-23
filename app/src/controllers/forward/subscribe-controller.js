@@ -185,6 +185,15 @@ async function subscribeAction(req, res) {
       });
     }
 
+    const reservedHandle = await aliasRepository.existsReservedHandle(aliasName);
+    if (reservedHandle) {
+      return res.status(409).json({
+        ok: false,
+        error: "alias_taken",
+        address: aliasAddress,
+      });
+    }
+
     const toIsAlias = await aliasRepository.existsByAddress(toParsed.email);
     if (toIsAlias) {
       return res.status(400).json({

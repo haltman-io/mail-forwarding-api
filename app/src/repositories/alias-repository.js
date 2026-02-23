@@ -11,6 +11,24 @@ const { query, withTx } = require("./db");
  */
 const aliasRepository = {
   /**
+   * Fetch a single alias by id.
+   * @param {number} id
+   * @returns {Promise<object | null>}
+   */
+  async getById(id) {
+    const rows = await query(
+      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+       FROM alias a
+       LEFT JOIN domain d
+         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+       WHERE a.id = ?
+       LIMIT 1`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+
+  /**
    * Fetch a single alias by address.
    * @param {string} address
    * @returns {Promise<object | null>}
@@ -40,6 +58,26 @@ const aliasRepository = {
        WHERE address = ?
        LIMIT 1`,
       [address]
+    );
+    return rows.length === 1;
+  },
+
+  /**
+   * Check whether a handle is reserved in alias_handle and active.
+   * @param {string} handle
+   * @returns {Promise<boolean>}
+   */
+  async existsReservedHandle(handle) {
+    const normalized = String(handle || "").trim().toLowerCase();
+    if (!normalized) return false;
+
+    const rows = await query(
+      `SELECT 1 AS ok
+       FROM alias_handle
+       WHERE handle = ?
+         AND active = 1
+       LIMIT 1`,
+      [normalized]
     );
     return rows.length === 1;
   },
@@ -194,6 +232,148 @@ const aliasRepository = {
         active: Number(row.active ?? 0),
       })),
     };
+  },
+
+  /**
+   * List aliases with optional filters.
+   * @param {{ limit: number, offset: number, active?: number, goto?: string, domain?: string, address?: string, handle?: string }} options
+   * @returns {Promise<object[]>}
+   */
+  async listAll({ limit, offset, active, goto, domain, address, handle }) {
+    const where = [];
+    const params = [];
+
+    if (active === 0 || active === 1) {
+      where.push("a.active = ?");
+      params.push(active);
+    }
+    if (goto) {
+      where.push("a.goto = ?");
+      params.push(goto);
+    }
+    if (domain) {
+      where.push("SUBSTRING_INDEX(a.address, '@', -1) = ?");
+      params.push(domain);
+    }
+    if (handle) {
+      where.push("SUBSTRING_INDEX(a.address, '@', 1) = ?");
+      params.push(handle);
+    }
+    if (address) {
+      where.push("a.address = ?");
+      params.push(address);
+    }
+
+    const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+    const rows = await query(
+      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+       FROM alias a
+       LEFT JOIN domain d
+         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+       ${whereSql}
+       ORDER BY a.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    return rows;
+  },
+
+  /**
+   * Count aliases with optional filters.
+   * @param {{ active?: number, goto?: string, domain?: string, address?: string, handle?: string }} options
+   * @returns {Promise<number>}
+   */
+  async countAll({ active, goto, domain, address, handle }) {
+    const where = [];
+    const params = [];
+
+    if (active === 0 || active === 1) {
+      where.push("active = ?");
+      params.push(active);
+    }
+    if (goto) {
+      where.push("goto = ?");
+      params.push(goto);
+    }
+    if (domain) {
+      where.push("SUBSTRING_INDEX(address, '@', -1) = ?");
+      params.push(domain);
+    }
+    if (handle) {
+      where.push("SUBSTRING_INDEX(address, '@', 1) = ?");
+      params.push(handle);
+    }
+    if (address) {
+      where.push("address = ?");
+      params.push(address);
+    }
+
+    const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+    const rows = await query(
+      `SELECT COUNT(*) AS total
+       FROM alias
+       ${whereSql}`,
+      params
+    );
+
+    return Number(rows[0]?.total ?? 0);
+  },
+
+  /**
+   * Update alias fields by id.
+   * @param {number} id
+   * @param {{ address?: string, goto?: string, active?: number }} patch
+   * @returns {Promise<boolean>}
+   */
+  async updateById(id, patch) {
+    const updates = [];
+    const params = [];
+
+    if (patch.address !== undefined) {
+      updates.push("address = ?");
+      params.push(patch.address);
+    }
+    if (patch.goto !== undefined) {
+      updates.push("goto = ?");
+      params.push(patch.goto);
+    }
+    if (patch.active === 0 || patch.active === 1) {
+      updates.push("active = ?");
+      params.push(patch.active);
+    }
+    if (updates.length === 0) return false;
+
+    updates.push("modified = CURRENT_TIMESTAMP()");
+
+    const result = await query(
+      `UPDATE alias
+       SET ${updates.join(", ")}
+       WHERE id = ?
+       LIMIT 1`,
+      [...params, id]
+    );
+
+    return Boolean(result && result.affectedRows === 1);
+  },
+
+  /**
+   * Soft-delete alias (active=0).
+   * @param {number} id
+   * @returns {Promise<boolean>}
+   */
+  async disableById(id) {
+    const result = await query(
+      `UPDATE alias
+       SET active = 0,
+           modified = CURRENT_TIMESTAMP()
+       WHERE id = ?
+       LIMIT 1`,
+      [id]
+    );
+    return Boolean(result && result.affectedRows === 1);
   },
 
   /**
