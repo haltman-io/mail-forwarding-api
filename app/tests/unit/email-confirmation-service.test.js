@@ -140,14 +140,16 @@ describe("api-credentials-email-service", () => {
     const mail = sendMail.mock.calls[0][0];
     expect(mail.from).toBe("Test <test@example.com>");
     expect(mail.to).toBe("user@example.com");
-    expect(mail.subject).toContain("CODE: 654321");
+    expect(mail.subject).toBe(
+      "654321 is your verification code | localhost / Your API token request"
+    );
+    expect(mail.text).toContain("YOUR VERIFICATION CODE IS: 654321");
     expect(mail.text).toContain("API CREDENTIALS REQUEST DETECTED.");
-    expect(mail.text).toContain("CREATE API KEY");
+    expect(mail.text).toContain("API_Key CREATE user@example.com");
     expect(mail.html).toContain("PENDING CONFIRMATION");
-    expect(mail.html).toContain("CREATE API KEY");
-    expect(mail.html).toContain("Requested Email");
-    expect(mail.html).toContain("API Key Lifetime");
-    expect(mail.html).toContain("CONFIRMATION IS REQUIRED TO CREATE A NEW API KEY:");
+    expect(mail.html).toContain("Your verification code is:");
+    expect(mail.html).toContain("API key lifetime:");
+    expect(mail.html).toContain("<code>API_Key CREATE user@example.com</code>");
     expect(mail.html).toContain("/api/credentials/confirm?token=654321");
 
     expect(result).toEqual(
@@ -159,6 +161,34 @@ describe("api-credentials-email-service", () => {
         action: "created",
       })
     );
+  });
+
+  test("supports action controlled by API subject env template", async () => {
+    process.env.API_CREDENTIALS_EMAIL_SUBJECT = "alias:create";
+
+    try {
+      const { service, sendMail } = loadApiCredentialsEmailService({
+        upsertResult: {
+          action: "created",
+          token_plain: "777999",
+          pending: null,
+        },
+      });
+
+      await service.sendApiTokenRequestEmail({
+        email: "user@example.com",
+        days: 7,
+        requestIpText: "198.51.100.42",
+        userAgent: "ua",
+      });
+
+      const mail = sendMail.mock.calls[0][0];
+      expect(mail.subject).toBe(
+        "777999 is your verification code | localhost / alias:create"
+      );
+    } finally {
+      delete process.env.API_CREDENTIALS_EMAIL_SUBJECT;
+    }
   });
 
   test("returns cooldown without sending email", async () => {
