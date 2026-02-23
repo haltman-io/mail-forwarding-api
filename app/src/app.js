@@ -10,6 +10,7 @@ const cors = require("cors");
 const { config } = require("./config");
 const { router } = require("./routes");
 const { requestLogger } = require("./middlewares/request-logger");
+const { denyBannedIp } = require("./middlewares/ip-ban");
 const { errorHandler } = require("./middlewares/error-handler");
 
 const app = express();
@@ -23,6 +24,7 @@ app.set("json replacer", (key, value) => {
 });
 
 app.use(requestLogger);
+app.use(denyBannedIp);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors());

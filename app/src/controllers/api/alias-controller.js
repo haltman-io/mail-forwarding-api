@@ -14,6 +14,11 @@ const {
   isValidDomain,
   parseMailbox,
 } = require("../../lib/mailbox-validation");
+const {
+  findActiveDomainBan,
+  findActiveEmailOrDomainBan,
+  findActiveNameBan,
+} = require("../../lib/ban-policy");
 
 function normStr(value) {
   return normalizeLowerTrim(value);
@@ -149,6 +154,15 @@ async function createAlias(req, res) {
     if (!isValidDomain(aliasDomain)) {
       return res.status(400).json({ error: "invalid_params", field: "alias_domain" });
     }
+
+    const banName = await findActiveNameBan(aliasHandle);
+    if (banName) return res.status(403).json({ error: "banned", ban: banName });
+
+    const banAliasDomain = await findActiveDomainBan(aliasDomain);
+    if (banAliasDomain) return res.status(403).json({ error: "banned", ban: banAliasDomain });
+
+    const banOwner = await findActiveEmailOrDomainBan(owner);
+    if (banOwner) return res.status(403).json({ error: "banned", ban: banOwner });
 
     const domainRow = await domainRepository.getActiveByName(aliasDomain);
     if (!domainRow) {

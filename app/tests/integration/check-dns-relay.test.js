@@ -10,6 +10,15 @@ jest.mock("axios", () => ({
   })),
 }));
 
+jest.mock("../../src/lib/ban-policy", () => ({
+  domainSuffixes: jest.fn((domain) => [String(domain || "")]),
+  ipCandidates: jest.fn((ip) => [String(ip || "")]),
+  findActiveIpBan: jest.fn().mockResolvedValue(null),
+  findActiveDomainBan: jest.fn().mockResolvedValue(null),
+  findActiveEmailOrDomainBan: jest.fn().mockResolvedValue(null),
+  findActiveNameBan: jest.fn().mockResolvedValue(null),
+}));
+
 const { app } = require("../../src/app");
 
 describe("check-dns relay routes", () => {

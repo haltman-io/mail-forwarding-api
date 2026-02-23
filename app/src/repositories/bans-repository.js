@@ -22,7 +22,66 @@ async function getActiveBanRow(banType, banValue) {
   return rows[0] || null;
 }
 
+/**
+ * @param {string} banType
+ * @param {string[]} banValues
+ * @returns {Promise<object | null>}
+ */
+async function getActiveBanRowByValues(banType, banValues) {
+  const uniqueValues = Array.from(
+    new Set(
+      (banValues || [])
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+
+  if (!banType || uniqueValues.length === 0) return null;
+
+  let rows = [];
+  if (banType === "ip") {
+    const ipWhere = uniqueValues
+      .map(() => "INET6_ATON(ban_value) = INET6_ATON(?)")
+      .join(" OR ");
+    rows = await query(
+      `SELECT ban_type, ban_value, reason,
+              created_at AS banned_at
+       FROM api_bans
+       WHERE ban_type = ?
+         AND (${ipWhere})
+         AND ${ACTIVE_WHERE}
+       ORDER BY id DESC
+       LIMIT 1`,
+      [banType, ...uniqueValues]
+    );
+  } else {
+    const placeholders = uniqueValues.map(() => "?").join(", ");
+    rows = await query(
+      `SELECT ban_type, ban_value, reason,
+              created_at AS banned_at
+       FROM api_bans
+       WHERE ban_type = ?
+         AND ban_value IN (${placeholders})
+         AND ${ACTIVE_WHERE}
+       ORDER BY id DESC
+       LIMIT 1`,
+      [banType, ...uniqueValues]
+    );
+  }
+
+  return rows[0] || null;
+}
+
 const bansRepository = {
+  /**
+   * @param {"email"|"domain"|"ip"|"name"|string} banType
+   * @param {string[]} banValues
+   * @returns {Promise<object | null>}
+   */
+  async getActiveBanByValues(banType, banValues) {
+    return getActiveBanRowByValues(banType, banValues);
+  },
+
   /**
    * Fetch ban row by id.
    * @param {number} id

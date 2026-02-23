@@ -7,6 +7,7 @@
 const { getPool, query, withTx, withTransaction } = require("./db");
 const { domainRepository } = require("./domain-repository");
 const { aliasRepository } = require("./alias-repository");
+const { aliasHandlesRepository } = require("./alias-handles-repository");
 const { bansRepository } = require("./bans-repository");
 const { emailConfirmationsRepository } = require("./email-confirmations-repository");
 const { apiTokenRequestsRepository } = require("./api-token-requests-repository");
@@ -19,6 +20,7 @@ module.exports = {
   db: { getPool, query, withTx, withTransaction },
   domainRepository,
   aliasRepository,
+  aliasHandlesRepository,
   bansRepository,
   emailConfirmationsRepository,
   apiTokenRequestsRepository,

@@ -6,6 +6,7 @@
 
 const { logger, logError } = require("../lib/logger");
 const { normalizeDomainTarget, INVALID_TARGET_ERROR } = require("../lib/domain-validation");
+const { findActiveDomainBan } = require("../lib/ban-policy");
 const checkDnsClient = require("../services/check-dns-client");
 
 const UNSUPPORTED_MEDIA_TYPE = { error: "unsupported_media_type" };
@@ -42,6 +43,9 @@ async function relayRequest(req, res, routeName, target, action) {
   const startedAt = process.hrtime.bigint();
 
   try {
+    const ban = await findActiveDomainBan(target);
+    if (ban) return res.status(403).json({ error: "banned", ban });
+
     const response = await action();
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
 

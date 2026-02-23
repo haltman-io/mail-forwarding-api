@@ -6,10 +6,15 @@
 
 const { config } = require("../../config");
 const { domainRepository } = require("../../repositories/domain-repository");
-const { bansRepository } = require("../../repositories/bans-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { sendEmailConfirmation } = require("../../services/email-confirmation-service");
 const { logError } = require("../../lib/logger");
+const {
+  domainSuffixes,
+  findActiveDomainBan,
+  findActiveEmailOrDomainBan,
+  findActiveNameBan,
+} = require("../../lib/ban-policy");
 const {
   normalizeLowerTrim,
   isValidLocalPart,
@@ -25,19 +30,6 @@ function isValidName(name) {
   return isValidLocalPart(name);
 }
 
-function domainSuffixes(domain) {
-  const parts = domain.split(".");
-  const out = [];
-  for (let i = 0; i < parts.length - 1; i++) {
-    out.push(parts.slice(i).join("."));
-  }
-  return out;
-}
-
-function getClientIp(req) {
-  return req.ip || "";
-}
-
 /**
  * GET /forward/subscribe
  * @param {import("express").Request} req
@@ -49,7 +41,6 @@ async function subscribeAction(req, res) {
     const domainRaw = req.query?.domain;
     const addressRaw = req.query?.address;
     const toRaw = req.query?.to || "";
-    const clientIp = getClientIp(req);
 
     const addressProvided = addressRaw !== undefined;
 
@@ -139,31 +130,14 @@ async function subscribeAction(req, res) {
       aliasAddress = `${name}@${chosenDomain}`;
     }
 
-    if (clientIp) {
-      const ban = await bansRepository.getBannedIP(clientIp);
-      if (ban) return res.status(403).json({ error: "banned", ban });
-    }
+    const banName = await findActiveNameBan(aliasName);
+    if (banName) return res.status(403).json({ error: "banned", ban: banName });
 
-    if (addressProvided) {
-      const banAddress = await bansRepository.getBannedEmail(aliasAddress);
-      if (banAddress) return res.status(403).json({ error: "banned", ban: banAddress });
+    const banAliasDomain = await findActiveDomainBan(aliasDomain);
+    if (banAliasDomain) return res.status(403).json({ error: "banned", ban: banAliasDomain });
 
-      for (const suffix of domainSuffixes(aliasDomain)) {
-        const banDomain = await bansRepository.getBannedDomain(suffix);
-        if (banDomain) return res.status(403).json({ error: "banned", ban: banDomain });
-      }
-    } else {
-      const banName = await bansRepository.getBannedName(aliasName);
-      if (banName) return res.status(403).json({ error: "banned", ban: banName });
-    }
-
-    const banEmail = await bansRepository.getBannedEmail(toParsed.email);
-    if (banEmail) return res.status(403).json({ error: "banned", ban: banEmail });
-
-    for (const suffix of domainSuffixes(toParsed.domain)) {
-      const banDomain = await bansRepository.getBannedDomain(suffix);
-      if (banDomain) return res.status(403).json({ error: "banned", ban: banDomain });
-    }
+    const banDestination = await findActiveEmailOrDomainBan(toParsed.email);
+    if (banDestination) return res.status(403).json({ error: "banned", ban: banDestination });
 
     if (!addressProvided) {
       domainRow = await domainRepository.getActiveByName(aliasDomain);

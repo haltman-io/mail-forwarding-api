@@ -23,6 +23,13 @@ const {
   deleteAdminAlias,
 } = require("../controllers/admin/aliases-controller");
 const {
+  listAdminHandles,
+  getAdminHandle,
+  createAdminHandle,
+  updateAdminHandle,
+  deleteAdminHandle,
+} = require("../controllers/admin/handles-controller");
+const {
   listAdminBans,
   getAdminBan,
   createAdminBan,
@@ -76,6 +83,13 @@ adminRouter.get("/aliases/:id", getAdminAlias);
 adminRouter.post("/aliases", createAdminAlias);
 adminRouter.patch("/aliases/:id", updateAdminAlias);
 adminRouter.delete("/aliases/:id", deleteAdminAlias);
+
+// handles (catch-all local-part rules: handle@*)
+adminRouter.get("/handles", listAdminHandles);
+adminRouter.get("/handles/:id", getAdminHandle);
+adminRouter.post("/handles", createAdminHandle);
+adminRouter.patch("/handles/:id", updateAdminHandle);
+adminRouter.delete("/handles/:id", deleteAdminHandle);
 
 // bans
 adminRouter.get("/bans", listAdminBans);

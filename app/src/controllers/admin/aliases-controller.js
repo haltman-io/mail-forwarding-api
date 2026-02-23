@@ -13,6 +13,11 @@ const {
   isValidDomain,
   parseMailbox,
 } = require("../../lib/mailbox-validation");
+const {
+  findActiveDomainBan,
+  findActiveEmailOrDomainBan,
+  findActiveNameBan,
+} = require("../../lib/ban-policy");
 const { parseId, parsePagination, parseOptionalBoolAsInt } = require("./helpers");
 
 function normStr(value) {
@@ -127,6 +132,15 @@ async function createAdminAlias(req, res) {
     if (!activeParsed.ok) return res.status(400).json({ error: "invalid_params", field: "active" });
     const active = activeParsed.value === undefined ? 1 : activeParsed.value;
 
+    const banName = await findActiveNameBan(addressParsed.local);
+    if (banName) return res.status(403).json({ error: "banned", ban: banName });
+
+    const banAliasDomain = await findActiveDomainBan(addressParsed.domain);
+    if (banAliasDomain) return res.status(403).json({ error: "banned", ban: banAliasDomain });
+
+    const banGoto = await findActiveEmailOrDomainBan(gotoParsed.email);
+    if (banGoto) return res.status(403).json({ error: "banned", ban: banGoto });
+
     const reservedHandle = await aliasRepository.existsReservedHandle(addressParsed.local);
     if (reservedHandle) {
       return res.status(409).json({
@@ -191,6 +205,10 @@ async function updateAdminAlias(req, res) {
     if (!current) return res.status(404).json({ error: "alias_not_found", id });
 
     const patch = {};
+    let nextAddress = String(current.address || "").trim().toLowerCase();
+    let nextGoto = String(current.goto || "").trim().toLowerCase();
+    let addressChanged = false;
+    let gotoChanged = false;
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "address")) {
       const addressParsed = parseMailbox(req.body?.address);
@@ -223,12 +241,16 @@ async function updateAdminAlias(req, res) {
       }
 
       patch.address = addressParsed.email;
+      nextAddress = addressParsed.email;
+      addressChanged = true;
     }
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "goto")) {
       const gotoParsed = parseMailbox(req.body?.goto);
       if (!gotoParsed) return res.status(400).json({ error: "invalid_params", field: "goto" });
       patch.goto = gotoParsed.email;
+      nextGoto = gotoParsed.email;
+      gotoChanged = true;
     }
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "active")) {
@@ -237,6 +259,26 @@ async function updateAdminAlias(req, res) {
         return res.status(400).json({ error: "invalid_params", field: "active" });
       }
       patch.active = activeParsed.value;
+    }
+
+    const nextActive =
+      patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
+
+    if (addressChanged || gotoChanged || nextActive === 1) {
+      const addressParsed = parseMailbox(nextAddress);
+      if (!addressParsed) return res.status(500).json({ error: "invalid_current_state", field: "address" });
+
+      const gotoParsed = parseMailbox(nextGoto);
+      if (!gotoParsed) return res.status(500).json({ error: "invalid_current_state", field: "goto" });
+
+      const banName = await findActiveNameBan(addressParsed.local);
+      if (banName) return res.status(403).json({ error: "banned", ban: banName });
+
+      const banAliasDomain = await findActiveDomainBan(addressParsed.domain);
+      if (banAliasDomain) return res.status(403).json({ error: "banned", ban: banAliasDomain });
+
+      const banGoto = await findActiveEmailOrDomainBan(gotoParsed.email);
+      if (banGoto) return res.status(403).json({ error: "banned", ban: banGoto });
     }
 
     if (Object.keys(patch).length === 0) {

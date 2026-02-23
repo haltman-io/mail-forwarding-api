@@ -14,6 +14,7 @@ const {
 } = require("../../services/admin-password-service");
 const {
   sendAdminUserChangeNotificationEmail,
+  sendAdminUserWelcomeEmail,
 } = require("../../services/admin-user-change-email-service");
 const { parseMailbox } = require("../../lib/mailbox-validation");
 const { logError } = require("../../lib/logger");
@@ -65,16 +66,26 @@ async function notifyAffectedAdmins({
 
   for (const email of dedup) {
     try {
-      await sendAdminUserChangeNotificationEmail({
-        toEmail: email,
-        targetEmail,
-        actorEmail,
-        action,
-        changes,
-        requestIpText: req.ip || "",
-        userAgent: String(req.headers["user-agent"] || ""),
-        occurredAt: new Date(),
-      });
+      const normalizedTargetEmail = String(targetEmail || "").trim().toLowerCase();
+      if (action === "admin_user_created" && email === normalizedTargetEmail) {
+        await sendAdminUserWelcomeEmail({
+          toEmail: email,
+          targetEmail,
+          actorEmail,
+          occurredAt: new Date(),
+        });
+      } else {
+        await sendAdminUserChangeNotificationEmail({
+          toEmail: email,
+          targetEmail,
+          actorEmail,
+          action,
+          changes,
+          requestIpText: req.ip || "",
+          userAgent: String(req.headers["user-agent"] || ""),
+          occurredAt: new Date(),
+        });
+      }
     } catch (err) {
       logError("admin.users.notify.error", err, req, { to_email: email, action, target_email: targetEmail });
     }
@@ -241,6 +252,12 @@ async function updateAdminUser(req, res) {
       }
       const currentActive = Number(current.is_active || 0);
       if (activeParsed.value !== currentActive) {
+        if (currentActive === 1 && activeParsed.value === 0) {
+          const totalActive = await adminAuthRepository.countUsers({ active: 1 });
+          if (totalActive <= 1) {
+            return res.status(409).json({ error: "cannot_disable_last_admin" });
+          }
+        }
         patch.isActive = activeParsed.value;
         changes.push("is_active");
       }
@@ -320,6 +337,13 @@ async function deleteAdminUser(req, res) {
 
     const current = await adminAuthRepository.getUserById(id);
     if (!current) return res.status(404).json({ error: "admin_user_not_found", id });
+
+    if (Number(current.is_active || 0) === 1) {
+      const totalActive = await adminAuthRepository.countUsers({ active: 1 });
+      if (totalActive <= 1) {
+        return res.status(409).json({ error: "cannot_disable_last_admin" });
+      }
+    }
 
     const disabled = await adminAuthRepository.disableUserById(id);
     const revokedSessions = await adminAuthRepository.revokeSessionsByUserId(id);

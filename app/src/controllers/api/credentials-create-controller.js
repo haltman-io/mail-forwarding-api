@@ -4,9 +4,9 @@
  * @fileoverview API credentials creation controller.
  */
 
-const { bansRepository } = require("../../repositories/bans-repository");
 const { sendApiTokenRequestEmail } = require("../../services/api-credentials-email-service");
 const { logError } = require("../../lib/logger");
+const { findActiveEmailOrDomainBan, findActiveIpBan } = require("../../lib/ban-policy");
 
 const MAX_EMAIL_LEN = 254;
 const RE_DOMAIN =
@@ -59,11 +59,11 @@ async function createCredentials(req, res) {
     if (!days) return res.status(400).json({ error: "invalid_params", field: "days", hint: "integer 1..90" });
 
     if (req.ip) {
-      const ban = await bansRepository.getBannedIP(req.ip);
+      const ban = await findActiveIpBan(req.ip);
       if (ban) return res.status(403).json({ error: "banned", ban });
     }
 
-    const banEmail = await bansRepository.getBannedEmail(parsedEmail.email);
+    const banEmail = await findActiveEmailOrDomainBan(parsedEmail.email);
     if (banEmail) return res.status(403).json({ error: "banned", ban: banEmail });
 
     const result = await sendApiTokenRequestEmail({

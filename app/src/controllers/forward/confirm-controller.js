@@ -11,6 +11,11 @@ const { domainRepository } = require("../../repositories/domain-repository");
 const { aliasRepository } = require("../../repositories/alias-repository");
 const { logError } = require("../../lib/logger");
 const {
+  findActiveDomainBan,
+  findActiveEmailOrDomainBan,
+  findActiveNameBan,
+} = require("../../lib/ban-policy");
+const {
   normalizeConfirmationCode,
   isConfirmationCodeValid,
 } = require("../../lib/confirmation-code");
@@ -103,6 +108,15 @@ async function confirmAction(req, res) {
       }
     }
 
+    const banName = await findActiveNameBan(aliasName);
+    if (banName) return res.status(403).json({ ok: false, error: "banned", ban: banName });
+
+    const banAliasDomain = await findActiveDomainBan(aliasDomain);
+    if (banAliasDomain) return res.status(403).json({ ok: false, error: "banned", ban: banAliasDomain });
+
+    const banDestination = await findActiveEmailOrDomainBan(toEmail);
+    if (banDestination) return res.status(403).json({ ok: false, error: "banned", ban: banDestination });
+
     const existing = await aliasRepository.getByAddress(address);
     if (existing && existing.id) {
       return res.status(200).json({
@@ -113,6 +127,15 @@ async function confirmAction(req, res) {
         reason: "already_exists",
         address,
         goto: toEmail,
+      });
+    }
+
+    const reservedHandle = await aliasRepository.existsReservedHandle(aliasName);
+    if (reservedHandle) {
+      return res.status(409).json({
+        ok: false,
+        error: "alias_taken",
+        address,
       });
     }
 

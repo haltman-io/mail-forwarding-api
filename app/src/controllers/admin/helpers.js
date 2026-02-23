@@ -33,9 +33,15 @@ function parsePagination(req, { defaultLimit = 50, maxLimit = 200 } = {}) {
 
 function parseOptionalBoolAsInt(raw) {
   if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: false };
   if (typeof raw === "boolean") return { ok: true, value: raw ? 1 : 0 };
+  if (typeof raw === "number") {
+    if (raw === 1) return { ok: true, value: 1 };
+    if (raw === 0) return { ok: true, value: 0 };
+    return { ok: false };
+  }
 
-  const value = String(raw || "").trim().toLowerCase();
+  const value = String(raw).trim().toLowerCase();
   if (!value) return { ok: false };
 
   if (["1", "true", "yes", "on"].includes(value)) return { ok: true, value: 1 };

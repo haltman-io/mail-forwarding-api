@@ -7,6 +7,7 @@
 const { domainRepository } = require("../../repositories/domain-repository");
 const { logError } = require("../../lib/logger");
 const { normalizeLowerTrim, isValidDomain } = require("../../lib/mailbox-validation");
+const { findActiveDomainBan } = require("../../lib/ban-policy");
 const { parseId, parsePagination, parseOptionalBoolAsInt } = require("./helpers");
 
 function normStr(value) {
@@ -84,6 +85,9 @@ async function createAdminDomain(req, res) {
       return res.status(400).json({ error: "invalid_params", field: "name" });
     }
 
+    const ban = await findActiveDomainBan(name);
+    if (ban) return res.status(403).json({ error: "banned", ban });
+
     const activeParsed = parseOptionalBoolAsInt(req.body?.active);
     if (!activeParsed.ok) return res.status(400).json({ error: "invalid_params", field: "active" });
     const active = activeParsed.value === undefined ? 1 : activeParsed.value;
@@ -122,6 +126,7 @@ async function updateAdminDomain(req, res) {
     if (!current) return res.status(404).json({ error: "domain_not_found", id });
 
     const patch = {};
+    let nextName = normStr(current.name || "");
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "name")) {
       const name = normStr(req.body?.name);
@@ -130,11 +135,15 @@ async function updateAdminDomain(req, res) {
         return res.status(400).json({ error: "invalid_params", field: "name" });
       }
 
+      const ban = await findActiveDomainBan(name);
+      if (ban) return res.status(403).json({ error: "banned", ban });
+
       const conflict = await domainRepository.getByName(name);
       if (conflict && Number(conflict.id) !== id) {
         return res.status(409).json({ error: "domain_taken", name });
       }
       patch.name = name;
+      nextName = name;
     }
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "active")) {
@@ -143,6 +152,13 @@ async function updateAdminDomain(req, res) {
         return res.status(400).json({ error: "invalid_params", field: "active" });
       }
       patch.active = activeParsed.value;
+    }
+
+    const nextActive =
+      patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
+    if (nextActive === 1) {
+      const activeBan = await findActiveDomainBan(nextName);
+      if (activeBan) return res.status(403).json({ error: "banned", ban: activeBan });
     }
 
     if (Object.keys(patch).length === 0) {
