@@ -54,6 +54,22 @@ function getDummyHash() {
   return configured || FALLBACK_DUMMY_ADMIN_PASSWORD_HASH;
 }
 
+function normalizePasswordForSlowVerify(raw) {
+  if (typeof raw === "string" && raw.length >= MIN_PASSWORD_LEN && raw.length <= MAX_PASSWORD_LEN) {
+    return raw;
+  }
+  return "invalid-password-placeholder";
+}
+
+async function consumeSlowVerify(rawPassword) {
+  const password = normalizePasswordForSlowVerify(rawPassword);
+  try {
+    await verifyAdminPassword(getDummyHash(), password);
+  } catch (_) {
+    // Intentionally ignore: this call only equalizes cost for invalid attempts.
+  }
+}
+
 /**
  * POST /admin/login
  * @param {import("express").Request} req
@@ -65,10 +81,14 @@ async function adminLogin(req, res) {
     const passwordRaw = req.body?.password;
 
     const email = normalizeEmailStrict(emailRaw);
-    if (!email) return res.status(400).json({ error: "invalid_params", field: "email" });
+    if (!email) {
+      await consumeSlowVerify(passwordRaw);
+      return res.status(400).json({ error: "invalid_params", field: "email" });
+    }
 
     const password = parsePassword(passwordRaw);
     if (!password) {
+      await consumeSlowVerify(passwordRaw);
       return res.status(400).json({
         error: "invalid_params",
         field: "password",
