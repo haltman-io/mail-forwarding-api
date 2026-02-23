@@ -6,6 +6,13 @@
 
 const { query } = require("./db");
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 const aliasHandlesRepository = {
   /**
    * Fetch a handle by id.
@@ -52,13 +59,15 @@ const aliasHandlesRepository = {
       where.push("active = ?");
       params.push(active);
     }
-    if (handle) {
-      where.push("handle = ?");
-      params.push(handle);
+    const handlePattern = buildContainsLikePattern(handle);
+    if (handlePattern) {
+      where.push("handle LIKE ? ESCAPE '\\\\'");
+      params.push(handlePattern);
     }
-    if (address) {
-      where.push("address = ?");
-      params.push(address);
+    const addressPattern = buildContainsLikePattern(address);
+    if (addressPattern) {
+      where.push("address LIKE ? ESCAPE '\\\\'");
+      params.push(addressPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
@@ -88,13 +97,15 @@ const aliasHandlesRepository = {
       where.push("active = ?");
       params.push(active);
     }
-    if (handle) {
-      where.push("handle = ?");
-      params.push(handle);
+    const handlePattern = buildContainsLikePattern(handle);
+    if (handlePattern) {
+      where.push("handle LIKE ? ESCAPE '\\\\'");
+      params.push(handlePattern);
     }
-    if (address) {
-      where.push("address = ?");
-      params.push(address);
+    const addressPattern = buildContainsLikePattern(address);
+    if (addressPattern) {
+      where.push("address LIKE ? ESCAPE '\\\\'");
+      params.push(addressPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

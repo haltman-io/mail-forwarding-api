@@ -9,6 +9,13 @@ const { query } = require("./db");
 const ACTIVE_WHERE =
   "revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW(6))";
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 async function getActiveBanRow(banType, banValue) {
   const rows = await query(
     `SELECT ban_type, ban_value, reason,
@@ -231,9 +238,10 @@ const bansRepository = {
       where.push("ban_type = ?");
       params.push(banType);
     }
-    if (banValue) {
-      where.push("ban_value = ?");
-      params.push(banValue);
+    const banValuePattern = buildContainsLikePattern(banValue);
+    if (banValuePattern) {
+      where.push("ban_value LIKE ? ESCAPE '\\\\'");
+      params.push(banValuePattern);
     }
     if (active === 1) {
       where.push(ACTIVE_WHERE);
@@ -269,9 +277,10 @@ const bansRepository = {
       where.push("ban_type = ?");
       params.push(banType);
     }
-    if (banValue) {
-      where.push("ban_value = ?");
-      params.push(banValue);
+    const banValuePattern = buildContainsLikePattern(banValue);
+    if (banValuePattern) {
+      where.push("ban_value LIKE ? ESCAPE '\\\\'");
+      params.push(banValuePattern);
     }
     if (active === 1) {
       where.push(ACTIVE_WHERE);

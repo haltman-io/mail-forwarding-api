@@ -18,6 +18,13 @@ function assertSessionTtlMinutes(value) {
   return Math.floor(num);
 }
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 const adminAuthRepository = {
   /**
    * @param {number} id
@@ -80,9 +87,10 @@ const adminAuthRepository = {
       where.push("is_active = ?");
       params.push(active);
     }
-    if (email) {
-      where.push("email = ?");
-      params.push(email);
+    const emailPattern = buildContainsLikePattern(email);
+    if (emailPattern) {
+      where.push("email LIKE ? ESCAPE '\\\\'");
+      params.push(emailPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
@@ -111,9 +119,10 @@ const adminAuthRepository = {
       where.push("is_active = ?");
       params.push(active);
     }
-    if (email) {
-      where.push("email = ?");
-      params.push(email);
+    const emailPattern = buildContainsLikePattern(email);
+    if (emailPattern) {
+      where.push("email LIKE ? ESCAPE '\\\\'");
+      params.push(emailPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

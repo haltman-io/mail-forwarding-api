@@ -6,6 +6,13 @@
 
 const { query, withTx } = require("./db");
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 /**
  * Alias data access layer.
  */
@@ -247,21 +254,25 @@ const aliasRepository = {
       where.push("a.active = ?");
       params.push(active);
     }
-    if (goto) {
-      where.push("a.goto = ?");
-      params.push(goto);
+    const gotoPattern = buildContainsLikePattern(goto);
+    if (gotoPattern) {
+      where.push("a.goto LIKE ? ESCAPE '\\\\'");
+      params.push(gotoPattern);
     }
-    if (domain) {
-      where.push("SUBSTRING_INDEX(a.address, '@', -1) = ?");
-      params.push(domain);
+    const domainPattern = buildContainsLikePattern(domain);
+    if (domainPattern) {
+      where.push("SUBSTRING_INDEX(a.address, '@', -1) LIKE ? ESCAPE '\\\\'");
+      params.push(domainPattern);
     }
-    if (handle) {
-      where.push("SUBSTRING_INDEX(a.address, '@', 1) = ?");
-      params.push(handle);
+    const handlePattern = buildContainsLikePattern(handle);
+    if (handlePattern) {
+      where.push("SUBSTRING_INDEX(a.address, '@', 1) LIKE ? ESCAPE '\\\\'");
+      params.push(handlePattern);
     }
-    if (address) {
-      where.push("a.address = ?");
-      params.push(address);
+    const addressPattern = buildContainsLikePattern(address);
+    if (addressPattern) {
+      where.push("a.address LIKE ? ESCAPE '\\\\'");
+      params.push(addressPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
@@ -293,21 +304,25 @@ const aliasRepository = {
       where.push("active = ?");
       params.push(active);
     }
-    if (goto) {
-      where.push("goto = ?");
-      params.push(goto);
+    const gotoPattern = buildContainsLikePattern(goto);
+    if (gotoPattern) {
+      where.push("goto LIKE ? ESCAPE '\\\\'");
+      params.push(gotoPattern);
     }
-    if (domain) {
-      where.push("SUBSTRING_INDEX(address, '@', -1) = ?");
-      params.push(domain);
+    const domainPattern = buildContainsLikePattern(domain);
+    if (domainPattern) {
+      where.push("SUBSTRING_INDEX(address, '@', -1) LIKE ? ESCAPE '\\\\'");
+      params.push(domainPattern);
     }
-    if (handle) {
-      where.push("SUBSTRING_INDEX(address, '@', 1) = ?");
-      params.push(handle);
+    const handlePattern = buildContainsLikePattern(handle);
+    if (handlePattern) {
+      where.push("SUBSTRING_INDEX(address, '@', 1) LIKE ? ESCAPE '\\\\'");
+      params.push(handlePattern);
     }
-    if (address) {
-      where.push("address = ?");
-      params.push(address);
+    const addressPattern = buildContainsLikePattern(address);
+    if (addressPattern) {
+      where.push("address LIKE ? ESCAPE '\\\\'");
+      params.push(addressPattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

@@ -9,8 +9,6 @@ const { domainRepository } = require("../../repositories/domain-repository");
 const { logError } = require("../../lib/logger");
 const {
   normalizeLowerTrim,
-  isValidLocalPart,
-  isValidDomain,
   parseMailbox,
 } = require("../../lib/mailbox-validation");
 const {
@@ -22,6 +20,11 @@ const { parseId, parsePagination, parseOptionalBoolAsInt } = require("./helpers"
 
 function normStr(value) {
   return normalizeLowerTrim(value);
+}
+
+function parseSearchTerm(raw) {
+  const value = normStr(raw);
+  return value || null;
 }
 
 /**
@@ -45,31 +48,31 @@ async function listAdminAliases(req, res) {
     const filters = { active: activeParsed.value };
 
     if (gotoRaw !== undefined) {
-      const gotoParsed = parseMailbox(gotoRaw);
-      if (!gotoParsed) return res.status(400).json({ error: "invalid_params", field: "goto" });
-      filters.goto = gotoParsed.email;
+      const goto = parseSearchTerm(gotoRaw);
+      if (!goto) return res.status(400).json({ error: "invalid_params", field: "goto" });
+      filters.goto = goto;
     }
 
     if (domainRaw !== undefined) {
-      const domain = normStr(domainRaw);
-      if (!domain || !isValidDomain(domain)) {
+      const domain = parseSearchTerm(domainRaw);
+      if (!domain) {
         return res.status(400).json({ error: "invalid_params", field: "domain" });
       }
       filters.domain = domain;
     }
 
     if (handleRaw !== undefined) {
-      const handle = normStr(handleRaw);
-      if (!handle || !isValidLocalPart(handle)) {
+      const handle = parseSearchTerm(handleRaw);
+      if (!handle) {
         return res.status(400).json({ error: "invalid_params", field: "handle" });
       }
       filters.handle = handle;
     }
 
     if (addressRaw !== undefined) {
-      const addressParsed = parseMailbox(addressRaw);
-      if (!addressParsed) return res.status(400).json({ error: "invalid_params", field: "address" });
-      filters.address = addressParsed.email;
+      const address = parseSearchTerm(addressRaw);
+      if (!address) return res.status(400).json({ error: "invalid_params", field: "address" });
+      filters.address = address;
     }
 
     const [items, total] = await Promise.all([

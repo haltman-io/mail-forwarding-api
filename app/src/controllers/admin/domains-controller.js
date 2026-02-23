@@ -28,12 +28,17 @@ async function listAdminDomains(req, res) {
     if (!activeParsed.ok) return res.status(400).json({ error: "invalid_params", field: "active" });
 
     const filters = { active: activeParsed.value };
+    if (req.query?.name !== undefined) {
+      const name = normStr(req.query?.name);
+      if (!name) return res.status(400).json({ error: "invalid_params", field: "name" });
+      filters.name = name;
+    }
 
     const [items, total] = await Promise.all([
       domainRepository.listAll({
         limit: paging.limit,
         offset: paging.offset,
-        active: filters.active,
+        ...filters,
       }),
       domainRepository.countAll(filters),
     ]);

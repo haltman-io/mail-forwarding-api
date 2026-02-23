@@ -6,6 +6,13 @@
 
 const { query } = require("./db");
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 const domainRepository = {
   /**
    * Fetch a domain by id.
@@ -74,17 +81,22 @@ const domainRepository = {
   },
 
   /**
-   * List domains with optional active filter.
-   * @param {{ limit: number, offset: number, active?: number }} options
+   * List domains with optional filters.
+   * @param {{ limit: number, offset: number, active?: number, name?: string }} options
    * @returns {Promise<object[]>}
    */
-  async listAll({ limit, offset, active }) {
+  async listAll({ limit, offset, active, name }) {
     const where = [];
     const params = [];
 
     if (active === 0 || active === 1) {
       where.push("active = ?");
       params.push(active);
+    }
+    const namePattern = buildContainsLikePattern(name);
+    if (namePattern) {
+      where.push("name LIKE ? ESCAPE '\\\\'");
+      params.push(namePattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
@@ -102,17 +114,22 @@ const domainRepository = {
   },
 
   /**
-   * Count domains with optional active filter.
-   * @param {{ active?: number }} options
+   * Count domains with optional filters.
+   * @param {{ active?: number, name?: string }} options
    * @returns {Promise<number>}
    */
-  async countAll({ active }) {
+  async countAll({ active, name }) {
     const where = [];
     const params = [];
 
     if (active === 0 || active === 1) {
       where.push("active = ?");
       params.push(active);
+    }
+    const namePattern = buildContainsLikePattern(name);
+    if (namePattern) {
+      where.push("name LIKE ? ESCAPE '\\\\'");
+      params.push(namePattern);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

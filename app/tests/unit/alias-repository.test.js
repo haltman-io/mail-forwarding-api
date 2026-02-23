@@ -98,6 +98,49 @@ describe("aliasRepository (schema v2)", () => {
     expect(total).toBe(12);
   });
 
+  test("listAll uses partial LIKE filters with escaped wildcard chars", async () => {
+    query.mockResolvedValue([]);
+
+    await aliasRepository.listAll({
+      limit: 25,
+      offset: 0,
+      active: 1,
+      goto: "owner",
+      domain: "example",
+      handle: "adm",
+      address: "foo_%\\bar",
+    });
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/a\.goto LIKE \? ESCAPE '\\\\'/i);
+    expect(sql).toMatch(/SUBSTRING_INDEX\(a\.address, '@', -1\) LIKE \? ESCAPE '\\\\'/i);
+    expect(sql).toMatch(/SUBSTRING_INDEX\(a\.address, '@', 1\) LIKE \? ESCAPE '\\\\'/i);
+    expect(sql).toMatch(/a\.address LIKE \? ESCAPE '\\\\'/i);
+    expect(params).toEqual([
+      1,
+      "%owner%",
+      "%example%",
+      "%adm%",
+      "%foo\\_\\%\\\\bar%",
+      25,
+      0,
+    ]);
+  });
+
+  test("countAll uses partial LIKE filters", async () => {
+    query.mockResolvedValue([{ total: "3" }]);
+
+    const total = await aliasRepository.countAll({
+      active: 0,
+      address: "gmail.com",
+    });
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/address LIKE \? ESCAPE '\\\\'/i);
+    expect(params).toEqual([0, "%gmail.com%"]);
+    expect(total).toBe(3);
+  });
+
   test("getStatsByGoto returns aggregated numbers and by_domain", async () => {
     query
       .mockResolvedValueOnce([

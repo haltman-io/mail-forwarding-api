@@ -16,7 +16,7 @@ const {
   sendAdminUserChangeNotificationEmail,
   sendAdminUserWelcomeEmail,
 } = require("../../services/admin-user-change-email-service");
-const { parseMailbox } = require("../../lib/mailbox-validation");
+const { parseMailbox, normalizeLowerTrim } = require("../../lib/mailbox-validation");
 const { logError } = require("../../lib/logger");
 const { parseId, parsePagination, parseOptionalBoolAsInt } = require("./helpers");
 
@@ -31,6 +31,11 @@ function parsePassword(raw) {
   if (typeof raw !== "string") return null;
   if (raw.length < MIN_PASSWORD_LEN || raw.length > MAX_PASSWORD_LEN) return null;
   return raw;
+}
+
+function parseSearchTerm(raw) {
+  const value = normalizeLowerTrim(raw);
+  return value || null;
 }
 
 function toPublicUser(row) {
@@ -107,7 +112,7 @@ async function listAdminUsers(req, res) {
 
     let email;
     if (req.query?.email !== undefined) {
-      email = parseEmailStrict(req.query?.email);
+      email = parseSearchTerm(req.query?.email);
       if (!email) return res.status(400).json({ error: "invalid_params", field: "email" });
     }
 

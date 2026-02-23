@@ -26,6 +26,11 @@ function parseAddressStrict(raw) {
   return parsed.email;
 }
 
+function parseSearchTerm(raw) {
+  const value = normalizeLowerTrim(raw);
+  return value || null;
+}
+
 /**
  * GET /admin/handles
  * @param {import("express").Request} req
@@ -42,13 +47,13 @@ async function listAdminHandles(req, res) {
     const filters = { active: activeParsed.value };
 
     if (req.query?.handle !== undefined) {
-      const handle = parseHandleStrict(req.query?.handle);
+      const handle = parseSearchTerm(req.query?.handle);
       if (!handle) return res.status(400).json({ error: "invalid_params", field: "handle" });
       filters.handle = handle;
     }
 
     if (req.query?.address !== undefined) {
-      const address = parseAddressStrict(req.query?.address);
+      const address = parseSearchTerm(req.query?.address);
       if (!address) return res.status(400).json({ error: "invalid_params", field: "address" });
       filters.address = address;
     }

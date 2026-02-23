@@ -10,6 +10,13 @@ function assertTokenHash32(buf) {
   if (!Buffer.isBuffer(buf) || buf.length !== 32) throw new Error("invalid_token_hash");
 }
 
+function buildContainsLikePattern(raw) {
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[\\%_]/g, "\\$&");
+  return `%${escaped}%`;
+}
+
 const apiTokensRepository = {
   /**
    * @param {number} id
@@ -107,9 +114,10 @@ const apiTokensRepository = {
     const where = [];
     const params = [];
 
-    if (ownerEmail) {
-      where.push("owner_email = ?");
-      params.push(ownerEmail);
+    const ownerEmailPattern = buildContainsLikePattern(ownerEmail);
+    if (ownerEmailPattern) {
+      where.push("owner_email LIKE ? ESCAPE '\\\\'");
+      params.push(ownerEmailPattern);
     }
     if (status) {
       where.push("status = ?");
@@ -155,9 +163,10 @@ const apiTokensRepository = {
     const where = [];
     const params = [];
 
-    if (ownerEmail) {
-      where.push("owner_email = ?");
-      params.push(ownerEmail);
+    const ownerEmailPattern = buildContainsLikePattern(ownerEmail);
+    if (ownerEmailPattern) {
+      where.push("owner_email LIKE ? ESCAPE '\\\\'");
+      params.push(ownerEmailPattern);
     }
     if (status) {
       where.push("status = ?");

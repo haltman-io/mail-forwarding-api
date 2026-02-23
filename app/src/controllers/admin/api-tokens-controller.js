@@ -6,7 +6,7 @@
 
 const crypto = require("crypto");
 const { apiTokensRepository } = require("../../repositories/api-tokens-repository");
-const { parseMailbox } = require("../../lib/mailbox-validation");
+const { parseMailbox, normalizeLowerTrim } = require("../../lib/mailbox-validation");
 const { packIp16 } = require("../../lib/ip-pack");
 const { logError } = require("../../lib/logger");
 const {
@@ -26,6 +26,11 @@ function normalizeStatus(raw) {
   const value = String(raw || "").trim().toLowerCase();
   if (!value || !ALLOWED_TOKEN_STATUS.has(value)) return null;
   return value;
+}
+
+function parseSearchTerm(raw) {
+  const value = normalizeLowerTrim(raw);
+  return value || null;
 }
 
 function parseDays(raw) {
@@ -69,9 +74,9 @@ async function listAdminApiTokens(req, res) {
     const filters = { active: activeParsed.value };
 
     if (req.query?.owner_email !== undefined) {
-      const email = parseMailbox(req.query?.owner_email);
+      const email = parseSearchTerm(req.query?.owner_email);
       if (!email) return res.status(400).json({ error: "invalid_params", field: "owner_email" });
-      filters.ownerEmail = email.email;
+      filters.ownerEmail = email;
     }
 
     if (req.query?.status !== undefined) {
