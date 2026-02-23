@@ -16,6 +16,11 @@ const app = express();
 
 // Trust proxy so req.ip is correct behind a reverse proxy.
 app.set("trust proxy", config.trustProxy);
+// MariaDB BIGINT may come as JS BigInt; convert to string in JSON responses.
+app.set("json replacer", (key, value) => {
+  if (typeof value === "bigint") return value.toString();
+  return value;
+});
 
 app.use(requestLogger);
 app.use(express.json());
