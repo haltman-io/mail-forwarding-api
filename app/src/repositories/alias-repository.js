@@ -179,6 +179,17 @@ const aliasRepository = {
   },
 
   /**
+   * Count active aliases.
+   * @returns {Promise<number>}
+   */
+  async countActive() {
+    const rows = await query(
+      "SELECT COUNT(*) AS total FROM alias WHERE active = 1"
+    );
+    return Number(rows[0]?.total ?? 0);
+  },
+
+  /**
    * Count aliases by destination (goto).
    * @param {string} goto
    * @returns {Promise<number>}

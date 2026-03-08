@@ -15,6 +15,7 @@ const { subscribeAction } = require("../controllers/forward/subscribe-controller
 const { unsubscribeAction } = require("../controllers/forward/unsubscribe-controller");
 const { confirmAction } = require("../controllers/forward/confirm-controller");
 const { getDomains } = require("../controllers/domains-controller");
+const { getStats } = require("../controllers/stats-controller");
 const {
   requestUi,
   requestEmail,
@@ -36,6 +37,8 @@ const router = express.Router();
 router.use("/admin", adminRouter);
 
 router.get("/domains", getDomains);
+
+router.get("/stats", getStats);
 
 router.get("/", (req, res) => {
   res.redirect("https://forward.haltman.io/");

@@ -194,6 +194,17 @@ const domainRepository = {
   },
 
   /**
+   * Count active domains.
+   * @returns {Promise<number>}
+   */
+  async countActive() {
+    const rows = await query(
+      "SELECT COUNT(*) AS total FROM domain WHERE active = 1"
+    );
+    return Number(rows[0]?.total ?? 0);
+  },
+
+  /**
    * Soft-delete a domain (set active=0).
    * @param {number} id
    * @returns {Promise<boolean>}
