@@ -11,6 +11,7 @@ jest.mock("../../src/repositories/admin-auth-repository", () => ({
     getUserById: jest.fn(),
     updateUserById: jest.fn(),
     countUsers: jest.fn(),
+    countActiveAdmins: jest.fn(),
     revokeSessionsByUserId: jest.fn(),
   },
 }));
@@ -63,6 +64,7 @@ describe("admin users controller notifications", () => {
       id: 7,
       email: "new-admin@example.com",
       is_active: 1,
+      is_admin: 1,
       created_at: "2026-02-23T18:00:00.000Z",
       updated_at: "2026-02-23T18:00:00.000Z",
       last_login_at: null,
@@ -73,6 +75,7 @@ describe("admin users controller notifications", () => {
         email: "new-admin@example.com",
         password: "StrongPassword123",
         is_active: 1,
+        is_admin: 1,
       },
       admin_auth: {
         email: "creator@example.com",
@@ -104,6 +107,7 @@ describe("admin users controller notifications", () => {
         id: 7,
         email: "old-admin@example.com",
         is_active: 1,
+        is_admin: 1,
         created_at: "2026-02-23T18:00:00.000Z",
         updated_at: "2026-02-23T18:00:00.000Z",
         last_login_at: null,
@@ -112,6 +116,7 @@ describe("admin users controller notifications", () => {
         id: 7,
         email: "updated-admin@example.com",
         is_active: 1,
+        is_admin: 1,
         created_at: "2026-02-23T18:00:00.000Z",
         updated_at: "2026-02-23T18:10:00.000Z",
         last_login_at: null,
@@ -138,6 +143,44 @@ describe("admin users controller notifications", () => {
     expect(sendAdminUserChangeNotificationEmail).toHaveBeenCalled();
     expect(sendAdminUserWelcomeEmail).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test("create common user skips admin welcome email", async () => {
+    adminAuthRepository.getUserByEmail.mockResolvedValue(null);
+    hashAdminPassword.mockResolvedValue("hash");
+    adminAuthRepository.createUser.mockResolvedValue({ insertId: 9 });
+    adminAuthRepository.getUserById.mockResolvedValue({
+      id: 9,
+      email: "new-user@example.com",
+      is_active: 1,
+      is_admin: 0,
+      created_at: "2026-02-23T18:00:00.000Z",
+      updated_at: "2026-02-23T18:00:00.000Z",
+      last_login_at: null,
+    });
+
+    const req = {
+      body: {
+        email: "new-user@example.com",
+        password: "StrongPassword123",
+        is_active: 1,
+        is_admin: 0,
+      },
+      admin_auth: {
+        email: "creator@example.com",
+      },
+      ip: "198.51.100.10",
+      headers: {
+        "user-agent": "unit-test-agent",
+      },
+    };
+    const res = createRes();
+
+    await createAdminUser(req, res);
+
+    expect(sendAdminUserWelcomeEmail).not.toHaveBeenCalled();
+    expect(sendAdminUserChangeNotificationEmail).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 });
 

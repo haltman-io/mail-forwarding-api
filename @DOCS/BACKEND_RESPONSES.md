@@ -32,6 +32,21 @@ Used by authenticated endpoints (`/api/alias/*`, `/api/activity`):
 - `401 { "error": "invalid_or_expired_api_key" }`
 - `500 { "error": "internal_error" }`
 
+### Shared auth errors (`requireAuth` middleware)
+Used by `/auth/me`:
+- `401 { "error": "missing_auth_token" }`
+- `401 { "error": "invalid_auth_token_format" }`
+- `401 { "error": "invalid_or_expired_auth_token" }`
+- `500 { "error": "internal_error" }`
+
+### Shared admin auth errors (`requireAdminAuth` middleware)
+Used by `/admin/*`:
+- `401 { "error": "missing_admin_token" }`
+- `401 { "error": "invalid_admin_token_format" }`
+- `401 { "error": "invalid_or_expired_admin_token" }`
+- `403 { "error": "admin_required" }`
+- `500 { "error": "internal_error" }`
+
 ### Shared rate-limit errors
 All rate-limited routes can return `429`.
 
@@ -61,6 +76,82 @@ Required params: none
 | Status | Indicator | Response schema | Additional data |
 |---|---|---|---|
 | 302 | `REDIRECT` | redirect | `Location: https://forward.haltman.io/` |
+
+## `POST /auth/register`
+Middlewares: global rate limit + auth-register rate limits
+
+Required params:
+- `email` (body, required)
+- `password` (body, required, string `8..128`)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 201 | `CREATED` | `{ "ok": true, "created": true, "user": { "id": "number", "email": "string", "is_active": "0|1", "is_admin": "boolean", "created_at": "datetime", "updated_at": "datetime", "last_login_at": "datetime|null" } }` | Public registration always creates `is_admin=false`. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "email|password", "hint?": "string" }` | Password hint is included for invalid length. |
+| 409 | `CONFLICT` | `{ "error": "user_taken", "email?": "string" }` | Email already exists. |
+| 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_registrations_ip`, `too_many_registrations_email` (`where: auth_register`). |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
+
+## `POST /auth/login`
+Middlewares: global rate limit + auth-login failed-attempt rate limits
+
+Required params:
+- `email` (body, required)
+- `password` (body, required, string `8..128`)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 200 | `SUCCESS` | `{ "ok": true, "action": "login", "user": { "id": "number", "email": "string", "is_active": "0|1", "is_admin": "boolean", "created_at": "datetime", "updated_at": "datetime", "last_login_at": "datetime|null" }, "auth": { "token": "hex", "token_type": "bearer", "expires_at": "datetime" } }` | Front-end can branch on `user.is_admin`, but admin authorization still must be enforced server-side. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "email|password", "hint?": "string" }` | Password hint is included for invalid length. |
+| 401 | `AUTH_ERROR` | `{ "error": "invalid_credentials" }` | Returned for unknown email or wrong password. |
+| 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_failed_attempts_ip`, `too_many_failed_attempts_email`, `too_many_failed_attempts_email_ip_heavy`, `too_many_failed_attempts_email_ip` (`where: auth_login`). |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
+
+## `GET /auth/me`
+Middlewares: global rate limit + `requireAuth`
+
+Required params:
+- Header: `Authorization: Bearer <token>` or `X-Auth-Token` (required)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 200 | `SUCCESS` | `{ "ok": true, "authenticated": true, "user": { "id": "number", "email": "string", "is_active": "0|1", "is_admin": "boolean", "created_at": "datetime", "updated_at": "datetime", "last_login_at": "datetime|null" }, "auth": { "session_id": "number", "token_type": "bearer", "expires_at": "datetime" } }` | Returns the current authenticated user regardless of role. |
+| 401 | `AUTH_ERROR` | Auth middleware payloads | `missing_auth_token`, `invalid_auth_token_format`, `invalid_or_expired_auth_token`. |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
+
+## `POST /auth/password/forgot`
+Middlewares: global rate limit + password-reset request rate limits
+
+Required params:
+- `email` (body, required)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 200 | `ACCEPTED_GENERIC` | `{ "ok": true, "action": "password_reset_request", "accepted": true, "recovery": { "ttl_minutes": "number" } }` | Response is intentionally generic and does not reveal whether the account exists. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "email" }` | Invalid/missing email format. |
+| 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_requests_ip`, `too_many_requests_email` (`where: password_reset_request`). |
+
+## `POST /auth/password/reset`
+Middlewares: global rate limit + password-reset confirm rate limits
+
+Required params:
+- `token` (body or query, required, 6-digit code)
+- `new_password` (body, required, string `8..128`)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 200 | `SUCCESS` | `{ "ok": true, "action": "password_reset", "updated": true, "reauth_required": true, "sessions_revoked": "number", "user": { "id": "number", "email": "string" } }` | Successful reset consumes the token and revokes active auth sessions. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "token|new_password", "hint?": "string" }` | Missing token or invalid password length. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_token" }` | Invalid token format. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_or_expired" }` | Token already used, expired or not found. |
+| 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_requests_ip`, `too_many_requests_token` (`where: password_reset_confirm`). |
+| 503 | `SERVICE_UNAVAILABLE` | `{ "error": "temporarily_unavailable" }` | Transaction retry exhausted / lock pressure (`tx_busy`). |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
 
 ## Unmatched Routes (`app` fallback)
 Path/method: any unmatched request after router
@@ -310,12 +401,19 @@ Use these values as frontend notification keys:
 - `invalid_domain`
 - `invalid_token`
 - `invalid_or_expired`
+- `missing_auth_token`
+- `invalid_auth_token_format`
+- `invalid_or_expired_auth_token`
+- `missing_admin_token`
+- `invalid_admin_token_format`
+- `invalid_or_expired_admin_token`
 - `unsupported_intent`
 - `alias_not_found`
 - `alias_taken`
 - `alias_inactive`
 - `alias_owner_changed`
 - `forbidden`
+- `admin_required`
 - `banned`
 - `rate_limited`
 - `server_misconfigured`
@@ -323,6 +421,8 @@ Use these values as frontend notification keys:
 - `temporarily_unavailable`
 - `confirmation_payload_missing`
 - `invalid_goto_on_alias`
+- `user_taken`
+- `cannot_demote_last_admin`
 
 ## Files Reviewed
 - `app/src/app.js`

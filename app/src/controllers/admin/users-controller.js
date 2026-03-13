@@ -38,12 +38,17 @@ function parseSearchTerm(raw) {
   return value || null;
 }
 
+function isAdminUser(row) {
+  return Number(row?.is_admin || 0) === 1;
+}
+
 function toPublicUser(row) {
   if (!row) return null;
   return {
     id: row.id,
     email: row.email,
     is_active: Number(row.is_active || 0),
+    is_admin: isAdminUser(row),
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
     last_login_at: row.last_login_at || null,
@@ -109,6 +114,8 @@ async function listAdminUsers(req, res) {
 
     const activeParsed = parseOptionalBoolAsInt(req.query?.active);
     if (!activeParsed.ok) return res.status(400).json({ error: "invalid_params", field: "active" });
+    const isAdminParsed = parseOptionalBoolAsInt(req.query?.is_admin);
+    if (!isAdminParsed.ok) return res.status(400).json({ error: "invalid_params", field: "is_admin" });
 
     let email;
     if (req.query?.email !== undefined) {
@@ -116,7 +123,7 @@ async function listAdminUsers(req, res) {
       if (!email) return res.status(400).json({ error: "invalid_params", field: "email" });
     }
 
-    const filters = { active: activeParsed.value, email };
+    const filters = { active: activeParsed.value, email, isAdmin: isAdminParsed.value };
 
     const [rows, total] = await Promise.all([
       adminAuthRepository.listUsers({
@@ -183,6 +190,9 @@ async function createAdminUser(req, res) {
     const activeParsed = parseOptionalBoolAsInt(req.body?.is_active);
     if (!activeParsed.ok) return res.status(400).json({ error: "invalid_params", field: "is_active" });
     const isActive = activeParsed.value === undefined ? 1 : activeParsed.value;
+    const isAdminParsed = parseOptionalBoolAsInt(req.body?.is_admin);
+    if (!isAdminParsed.ok) return res.status(400).json({ error: "invalid_params", field: "is_admin" });
+    const isAdmin = isAdminParsed.value === undefined ? 1 : isAdminParsed.value;
 
     const existing = await adminAuthRepository.getUserByEmail(email);
     if (existing) return res.status(409).json({ error: "admin_user_taken", email });
@@ -193,17 +203,20 @@ async function createAdminUser(req, res) {
       email,
       passwordHash,
       isActive,
+      isAdmin,
     });
 
     const row = await adminAuthRepository.getUserById(created.insertId);
 
-    await notifyAffectedAdmins({
-      req,
-      recipientEmails: [email],
-      targetEmail: email,
-      action: "admin_user_created",
-      changes: ["email", "password", "is_active"],
-    });
+    if (isAdminUser(row)) {
+      await notifyAffectedAdmins({
+        req,
+        recipientEmails: [email],
+        targetEmail: email,
+        action: "admin_user_created",
+        changes: ["email", "password", "is_active", "is_admin"],
+      });
+    }
 
     return res.status(201).json({
       ok: true,
@@ -234,6 +247,7 @@ async function updateAdminUser(req, res) {
 
     const patch = {};
     const changes = [];
+    const currentIsAdmin = isAdminUser(current);
 
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, "email")) {
       const email = parseEmailStrict(req.body?.email);
@@ -257,14 +271,32 @@ async function updateAdminUser(req, res) {
       }
       const currentActive = Number(current.is_active || 0);
       if (activeParsed.value !== currentActive) {
-        if (currentActive === 1 && activeParsed.value === 0) {
-          const totalActive = await adminAuthRepository.countUsers({ active: 1 });
-          if (totalActive <= 1) {
+        if (currentActive === 1 && currentIsAdmin && activeParsed.value === 0) {
+          const totalActiveAdmins = await adminAuthRepository.countActiveAdmins();
+          if (totalActiveAdmins <= 1) {
             return res.status(409).json({ error: "cannot_disable_last_admin" });
           }
         }
         patch.isActive = activeParsed.value;
         changes.push("is_active");
+      }
+    }
+
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, "is_admin")) {
+      const isAdminParsed = parseOptionalBoolAsInt(req.body?.is_admin);
+      if (!isAdminParsed.ok || isAdminParsed.value === undefined) {
+        return res.status(400).json({ error: "invalid_params", field: "is_admin" });
+      }
+      if (isAdminParsed.value !== Number(current.is_admin || 0)) {
+        const nextIsActive = patch.isActive === undefined ? Number(current.is_active || 0) : patch.isActive;
+        if (currentIsAdmin && nextIsActive === 1 && isAdminParsed.value === 0) {
+          const totalActiveAdmins = await adminAuthRepository.countActiveAdmins();
+          if (totalActiveAdmins <= 1) {
+            return res.status(409).json({ error: "cannot_demote_last_admin" });
+          }
+        }
+        patch.isAdmin = isAdminParsed.value;
+        changes.push("is_admin");
       }
     }
 
@@ -298,21 +330,24 @@ async function updateAdminUser(req, res) {
     await adminAuthRepository.updateUserById(id, patch);
 
     let revokedSessions = 0;
-    if (patch.passwordHash !== undefined || patch.isActive === 0) {
+    if (patch.passwordHash !== undefined || patch.isActive === 0 || patch.isAdmin !== undefined) {
       revokedSessions = await adminAuthRepository.revokeSessionsByUserId(id);
     }
 
     const row = await adminAuthRepository.getUserById(id);
     const newEmail = String(row?.email || "").trim().toLowerCase();
     const oldEmail = String(current?.email || "").trim().toLowerCase();
+    const shouldNotifyAdminChange = currentIsAdmin || isAdminUser(row) || patch.isAdmin !== undefined;
 
-    await notifyAffectedAdmins({
-      req,
-      recipientEmails: [oldEmail, newEmail],
-      targetEmail: newEmail || oldEmail,
-      action: "admin_user_updated",
-      changes,
-    });
+    if (shouldNotifyAdminChange) {
+      await notifyAffectedAdmins({
+        req,
+        recipientEmails: [oldEmail, newEmail],
+        targetEmail: newEmail || oldEmail,
+        action: "admin_user_updated",
+        changes,
+      });
+    }
 
     return res.status(200).json({
       ok: true,
@@ -343,9 +378,9 @@ async function deleteAdminUser(req, res) {
     const current = await adminAuthRepository.getUserById(id);
     if (!current) return res.status(404).json({ error: "admin_user_not_found", id });
 
-    if (Number(current.is_active || 0) === 1) {
-      const totalActive = await adminAuthRepository.countUsers({ active: 1 });
-      if (totalActive <= 1) {
+    if (Number(current.is_active || 0) === 1 && isAdminUser(current)) {
+      const totalActiveAdmins = await adminAuthRepository.countActiveAdmins();
+      if (totalActiveAdmins <= 1) {
         return res.status(409).json({ error: "cannot_disable_last_admin" });
       }
     }
@@ -355,13 +390,15 @@ async function deleteAdminUser(req, res) {
     const row = await adminAuthRepository.getUserById(id);
 
     const targetEmail = String(row?.email || current.email || "").trim().toLowerCase();
-    await notifyAffectedAdmins({
-      req,
-      recipientEmails: [targetEmail],
-      targetEmail,
-      action: "admin_user_deleted",
-      changes: ["is_active"],
-    });
+    if (isAdminUser(current) || isAdminUser(row)) {
+      await notifyAffectedAdmins({
+        req,
+        recipientEmails: [targetEmail],
+        targetEmail,
+        action: "admin_user_deleted",
+        changes: ["is_active"],
+      });
+    }
 
     return res.status(200).json({
       ok: true,

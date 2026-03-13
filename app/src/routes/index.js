@@ -9,6 +9,7 @@ const express = require("express");
 const { rateLimit } = require("../middlewares/rate-limit");
 const { requireApiKey } = require("../middlewares/api-key");
 const { apiLogAuthenticated } = require("../middlewares/api-logs");
+const { authRouter } = require("./auth");
 const { adminRouter } = require("./admin");
 
 const { subscribeAction } = require("../controllers/forward/subscribe-controller");
@@ -34,6 +35,7 @@ const {
 
 const router = express.Router();
 
+router.use("/auth", authRouter);
 router.use("/admin", adminRouter);
 
 router.get("/domains", getDomains);

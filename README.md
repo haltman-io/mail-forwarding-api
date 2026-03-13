@@ -83,6 +83,15 @@ app/
 
 ## API Endpoints (core)
 
+### Authentication
+
+- `POST /auth/register` (body: `email`, `password`) creates a common user account
+- `POST /auth/login` (body: `email`, `password`) authenticates any active user and returns a bearer token plus `user.is_admin`
+- `POST /auth/password/forgot` (body: `email`) requests a single-use password reset code valid for 15 minutes
+- `POST /auth/password/reset` (body: `token`, `new_password`) consumes the reset code, changes the password and revokes active sessions
+- `GET /auth/me` (requires bearer token or `X-Auth-Token`) returns the authenticated user profile
+- `GET /admin/me` (requires admin token) validates that the authenticated user is still an administrator
+
 ### `GET /forward/subscribe`
 Request alias creation.
 

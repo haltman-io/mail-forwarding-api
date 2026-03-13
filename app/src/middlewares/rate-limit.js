@@ -464,10 +464,10 @@ const rateLimit = {
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // /admin/login (anti brute-force)
+  // /auth/login (anti brute-force)
   // Counts only failed attempts (non-2xx).
   // ───────────────────────────────────────────────────────────────────────────
-  get adminLoginFailByIp() {
+  get authLoginFailByIp() {
     return createRateLimiter(
       {
         windowMs: 15 * 60 * 1000,
@@ -477,14 +477,14 @@ const rateLimit = {
         requestWasSuccessful: is2xxResponse,
         standardHeaders: "draft-7",
         legacyHeaders: false,
-        message: { error: "rate_limited", where: "admin_login", reason: "too_many_failed_attempts_ip" },
+        message: { error: "rate_limited", where: "auth_login", reason: "too_many_failed_attempts_ip" },
         keyGenerator: keyByIp,
       },
-      "admin_login_fail_ip"
+      "auth_login_fail_ip"
     );
   },
 
-  get adminLoginFailByEmail() {
+  get authLoginFailByEmail() {
     return createRateLimiter(
       {
         windowMs: 60 * 60 * 1000,
@@ -496,19 +496,19 @@ const rateLimit = {
         legacyHeaders: false,
         message: {
           error: "rate_limited",
-          where: "admin_login",
+          where: "auth_login",
           reason: "too_many_failed_attempts_email",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
-          return `admin_login_email:${email || "missing"}`;
+          const email = rateLimitHelpers.normalizeAuthEmail(req);
+          return `auth_login_email:${email || "missing"}`;
         },
       },
-      "admin_login_fail_email"
+      "auth_login_fail_email"
     );
   },
 
-  get adminLoginFailHardByEmailIp() {
+  get authLoginFailHardByEmailIp() {
     return createRateLimiter(
       {
         windowMs: 6 * 60 * 60 * 1000,
@@ -520,20 +520,20 @@ const rateLimit = {
         legacyHeaders: false,
         message: {
           error: "rate_limited",
-          where: "admin_login",
+          where: "auth_login",
           reason: "too_many_failed_attempts_email_ip_heavy",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
+          const email = rateLimitHelpers.normalizeAuthEmail(req);
           const ip = keyByIp(req);
-          return `admin_login_heavy:${email || "missing"}:${ip}`;
+          return `auth_login_heavy:${email || "missing"}:${ip}`;
         },
       },
-      "admin_login_fail_heavy_email_ip"
+      "auth_login_fail_heavy_email_ip"
     );
   },
 
-  get adminLoginFailFastByEmailIp() {
+  get authLoginFailFastByEmailIp() {
     return createRateLimiter(
       {
         windowMs: 5 * 60 * 1000,
@@ -545,22 +545,160 @@ const rateLimit = {
         legacyHeaders: false,
         message: {
           error: "rate_limited",
-          where: "admin_login",
+          where: "auth_login",
           reason: "too_many_failed_attempts_email_ip",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAdminLoginEmail(req);
+          const email = rateLimitHelpers.normalizeAuthEmail(req);
           const ip = keyByIp(req);
-          return `admin_login_fast:${email || "missing"}:${ip}`;
+          return `auth_login_fast:${email || "missing"}:${ip}`;
         },
       },
-      "admin_login_fail_fast_email_ip"
+      "auth_login_fail_fast_email_ip"
     );
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // /api/alias/* (authenticated)
+  // /auth/register
   // ───────────────────────────────────────────────────────────────────────────
+  get authRegisterByIp() {
+    return createRateLimiter(
+      {
+        windowMs: 60 * 60 * 1000,
+        limit: Number(config.rlAuthRegisterPerHourPerIp ?? 10),
+        skip: () => Number(config.rlAuthRegisterPerHourPerIp ?? 10) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: { error: "rate_limited", where: "auth_register", reason: "too_many_registrations_ip" },
+        keyGenerator: keyByIp,
+      },
+      "auth_register_ip"
+    );
+  },
+
+  get authRegisterByEmail() {
+    return createRateLimiter(
+      {
+        windowMs: 60 * 60 * 1000,
+        limit: Number(config.rlAuthRegisterPerHourPerEmail ?? 3),
+        skip: () => Number(config.rlAuthRegisterPerHourPerEmail ?? 3) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "auth_register",
+          reason: "too_many_registrations_email",
+        },
+        keyGenerator: (req) => {
+          const email = rateLimitHelpers.normalizeAuthEmail(req);
+          return `auth_register:${email || "missing"}`;
+        },
+      },
+      "auth_register_email"
+    );
+  },
+
+  get authPasswordResetRequestByIp() {
+    return createRateLimiter(
+      {
+        windowMs: 60 * 60 * 1000,
+        limit: Number(config.rlAuthPasswordResetRequestPerHourPerIp ?? 10),
+        skip: () => Number(config.rlAuthPasswordResetRequestPerHourPerIp ?? 10) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "password_reset_request",
+          reason: "too_many_requests_ip",
+        },
+        keyGenerator: keyByIp,
+      },
+      "auth_password_reset_request_ip"
+    );
+  },
+
+  get authPasswordResetRequestByEmail() {
+    return createRateLimiter(
+      {
+        windowMs: 60 * 60 * 1000,
+        limit: Number(config.rlAuthPasswordResetRequestPerHourPerEmail ?? 3),
+        skip: () => Number(config.rlAuthPasswordResetRequestPerHourPerEmail ?? 3) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "password_reset_request",
+          reason: "too_many_requests_email",
+        },
+        keyGenerator: (req) => {
+          const email = rateLimitHelpers.normalizeAuthEmail(req);
+          return `auth_password_reset_request:${email || "missing"}`;
+        },
+      },
+      "auth_password_reset_request_email"
+    );
+  },
+
+  get authPasswordResetConfirmByIp() {
+    return createRateLimiter(
+      {
+        windowMs: 10 * 60 * 1000,
+        limit: Number(config.rlAuthPasswordResetConfirmPer10MinPerIp ?? 30),
+        skip: () => Number(config.rlAuthPasswordResetConfirmPer10MinPerIp ?? 30) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "password_reset_confirm",
+          reason: "too_many_requests_ip",
+        },
+        keyGenerator: keyByIp,
+      },
+      "auth_password_reset_confirm_ip"
+    );
+  },
+
+  get authPasswordResetConfirmByToken() {
+    return createRateLimiter(
+      {
+        windowMs: 10 * 60 * 1000,
+        limit: Number(config.rlAuthPasswordResetConfirmPer10MinPerToken ?? 10),
+        skip: () => Number(config.rlAuthPasswordResetConfirmPer10MinPerToken ?? 10) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "password_reset_confirm",
+          reason: "too_many_requests_token",
+        },
+        keyGenerator: (req) => {
+          const token = rateLimitHelpers.normalizeToken(req);
+          return `auth_password_reset_confirm:${token || "missing"}`;
+        },
+      },
+      "auth_password_reset_confirm_token"
+    );
+  },
+
+  get adminLoginFailByIp() {
+    return rateLimit.authLoginFailByIp;
+  },
+
+  get adminLoginFailByEmail() {
+    return rateLimit.authLoginFailByEmail;
+  },
+
+  get adminLoginFailHardByEmailIp() {
+    return rateLimit.authLoginFailHardByEmailIp;
+  },
+
+  get adminLoginFailFastByEmailIp() {
+    return rateLimit.authLoginFailFastByEmailIp;
+  },
+
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // /api/alias/* (authenticated)
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   get aliasListLimitByKey() {
     return createRateLimiter(
       {

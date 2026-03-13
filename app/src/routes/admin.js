@@ -6,7 +6,7 @@
 
 const express = require("express");
 const { rateLimit } = require("../middlewares/rate-limit");
-const { adminLogin, getAdminMe } = require("../controllers/admin/login-controller");
+const { getAdminMe } = require("../controllers/admin/login-controller");
 const { requireAdminAuth } = require("../middlewares/admin-auth");
 const {
   listAdminDomains,
@@ -53,16 +53,6 @@ const {
 } = require("../controllers/admin/users-controller");
 
 const adminRouter = express.Router();
-
-adminRouter.post(
-  "/login",
-  rateLimit.globalLimiter,
-  rateLimit.adminLoginFailByIp,
-  rateLimit.adminLoginFailByEmail,
-  rateLimit.adminLoginFailHardByEmailIp,
-  rateLimit.adminLoginFailFastByEmailIp,
-  adminLogin
-);
 
 // Every route declared after this line will require admin authentication.
 adminRouter.use(rateLimit.globalLimiter, requireAdminAuth);

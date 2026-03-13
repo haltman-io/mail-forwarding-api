@@ -75,6 +75,12 @@ const dotenv = require("dotenv");
  * @property {number} rlCredentialsCreatePerHourPerEmail
  * @property {number} rlCredentialsConfirmPer10MinPerIp
  * @property {number} rlCredentialsConfirmPer10MinPerToken
+ * @property {number} rlAuthRegisterPerHourPerIp
+ * @property {number} rlAuthRegisterPerHourPerEmail
+ * @property {number} rlAuthPasswordResetRequestPerHourPerIp
+ * @property {number} rlAuthPasswordResetRequestPerHourPerEmail
+ * @property {number} rlAuthPasswordResetConfirmPer10MinPerIp
+ * @property {number} rlAuthPasswordResetConfirmPer10MinPerToken
  * @property {number} rlAdminLoginFailPer15MinPerIp
  * @property {number} rlAdminLoginFailPerHourPerEmail
  * @property {number} rlAdminLoginFailPer6HoursPerEmailIp
@@ -89,6 +95,10 @@ const dotenv = require("dotenv");
  * @property {number} apiCredentialsEmailTokenLen
  * @property {number} apiCredentialsEmailMaxSends
  * @property {string} apiCredentialsEmailSubject
+ * @property {number} passwordResetTtlMinutes
+ * @property {number} passwordResetResendCooldownSeconds
+ * @property {number} passwordResetMaxSends
+ * @property {string} passwordResetEmailSubject
  * @property {number} adminAuthSessionTtlMinutes
  * @property {number} adminAuthTokenBytes
  * @property {string} adminAuthDummyPasswordHash
@@ -301,6 +311,16 @@ function buildConfig(meta) {
     rlCredentialsConfirmPer10MinPerIp: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_IP", 60),
     rlCredentialsConfirmPer10MinPerToken: getInt("RL_CREDENTIALS_CONFIRM_PER_10MIN_PER_TOKEN", 5),
 
+    // auth register
+    rlAuthRegisterPerHourPerIp: getInt("RL_AUTH_REGISTER_PER_HOUR_PER_IP", 10),
+    rlAuthRegisterPerHourPerEmail: getInt("RL_AUTH_REGISTER_PER_HOUR_PER_EMAIL", 3),
+
+    // auth password reset
+    rlAuthPasswordResetRequestPerHourPerIp: getInt("RL_AUTH_PASSWORD_RESET_REQUEST_PER_HOUR_PER_IP", 10),
+    rlAuthPasswordResetRequestPerHourPerEmail: getInt("RL_AUTH_PASSWORD_RESET_REQUEST_PER_HOUR_PER_EMAIL", 3),
+    rlAuthPasswordResetConfirmPer10MinPerIp: getInt("RL_AUTH_PASSWORD_RESET_CONFIRM_PER_10MIN_PER_IP", 30),
+    rlAuthPasswordResetConfirmPer10MinPerToken: getInt("RL_AUTH_PASSWORD_RESET_CONFIRM_PER_10MIN_PER_TOKEN", 10),
+
     // admin login (failed attempts only)
     rlAdminLoginFailPer15MinPerIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_15MIN_PER_IP", 12),
     rlAdminLoginFailPerHourPerEmail: getInt("RL_ADMIN_LOGIN_FAIL_PER_HOUR_PER_EMAIL", 6),
@@ -329,6 +349,11 @@ function buildConfig(meta) {
       "API_CREDENTIALS_EMAIL_SUBJECT",
       "Your API token request"
     ),
+
+    passwordResetTtlMinutes: getInt("PASSWORD_RESET_TTL_MINUTES", 15),
+    passwordResetResendCooldownSeconds: getInt("PASSWORD_RESET_RESEND_COOLDOWN_SECONDS", 60),
+    passwordResetMaxSends: getInt("PASSWORD_RESET_MAX_SENDS", 3),
+    passwordResetEmailSubject: getString("PASSWORD_RESET_EMAIL_SUBJECT", "Password reset"),
 
     adminAuthSessionTtlMinutes: getInt("ADMIN_AUTH_SESSION_TTL_MINUTES", 12 * 60),
     adminAuthTokenBytes: getInt("ADMIN_AUTH_TOKEN_BYTES", 32),

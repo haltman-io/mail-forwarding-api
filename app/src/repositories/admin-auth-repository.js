@@ -1,10 +1,13 @@
 "use strict";
 
 /**
- * @fileoverview Admin authentication repository (users + sessions).
+ * @fileoverview Authentication repository (users + sessions).
  */
 
 const { query } = require("./db");
+
+const USERS_TABLE = "users";
+const SESSIONS_TABLE = "auth_sessions";
 
 function assertTokenHash32(buf) {
   if (!Buffer.isBuffer(buf) || buf.length !== 32) throw new Error("invalid_token_hash");
@@ -32,8 +35,8 @@ const adminAuthRepository = {
    */
   async getUserById(id) {
     const rows = await query(
-      `SELECT id, email, password_hash, is_active, created_at, updated_at, last_login_at
-       FROM admin_users
+      `SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at, last_login_at
+       FROM ${USERS_TABLE}
        WHERE id = ?
        LIMIT 1`,
       [id]
@@ -48,8 +51,8 @@ const adminAuthRepository = {
    */
   async getUserByEmail(email) {
     const rows = await query(
-      `SELECT id, email, password_hash, is_active, created_at, updated_at, last_login_at
-       FROM admin_users
+      `SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at, last_login_at
+       FROM ${USERS_TABLE}
        WHERE email = ?
        LIMIT 1`,
       [email]
@@ -64,8 +67,8 @@ const adminAuthRepository = {
    */
   async getActiveUserByEmail(email) {
     const rows = await query(
-      `SELECT id, email, password_hash, is_active, created_at, last_login_at
-       FROM admin_users
+      `SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at, last_login_at
+       FROM ${USERS_TABLE}
        WHERE email = ?
          AND is_active = 1
        LIMIT 1`,
@@ -76,16 +79,20 @@ const adminAuthRepository = {
   },
 
   /**
-   * @param {{ limit: number, offset: number, active?: number, email?: string }} options
+   * @param {{ limit: number, offset: number, active?: number, email?: string, isAdmin?: number }} options
    * @returns {Promise<object[]>}
    */
-  async listUsers({ limit, offset, active, email }) {
+  async listUsers({ limit, offset, active, email, isAdmin }) {
     const where = [];
     const params = [];
 
     if (active === 0 || active === 1) {
       where.push("is_active = ?");
       params.push(active);
+    }
+    if (isAdmin === 0 || isAdmin === 1) {
+      where.push("is_admin = ?");
+      params.push(isAdmin);
     }
     const emailPattern = buildContainsLikePattern(email);
     if (emailPattern) {
@@ -96,8 +103,8 @@ const adminAuthRepository = {
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
     const rows = await query(
-      `SELECT id, email, password_hash, is_active, created_at, updated_at, last_login_at
-       FROM admin_users
+      `SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at, last_login_at
+       FROM ${USERS_TABLE}
        ${whereSql}
        ORDER BY id DESC
        LIMIT ? OFFSET ?`,
@@ -108,16 +115,20 @@ const adminAuthRepository = {
   },
 
   /**
-   * @param {{ active?: number, email?: string }} options
+   * @param {{ active?: number, email?: string, isAdmin?: number }} options
    * @returns {Promise<number>}
    */
-  async countUsers({ active, email }) {
+  async countUsers({ active, email, isAdmin }) {
     const where = [];
     const params = [];
 
     if (active === 0 || active === 1) {
       where.push("is_active = ?");
       params.push(active);
+    }
+    if (isAdmin === 0 || isAdmin === 1) {
+      where.push("is_admin = ?");
+      params.push(isAdmin);
     }
     const emailPattern = buildContainsLikePattern(email);
     if (emailPattern) {
@@ -129,7 +140,7 @@ const adminAuthRepository = {
 
     const rows = await query(
       `SELECT COUNT(*) AS total
-       FROM admin_users
+       FROM ${USERS_TABLE}
        ${whereSql}`,
       params
     );
@@ -138,17 +149,24 @@ const adminAuthRepository = {
   },
 
   /**
-   * @param {{ email: string, passwordHash: string, isActive?: number }} payload
+   * @returns {Promise<number>}
+   */
+  async countActiveAdmins() {
+    return adminAuthRepository.countUsers({ active: 1, isAdmin: 1 });
+  },
+
+  /**
+   * @param {{ email: string, passwordHash: string, isActive?: number, isAdmin?: number }} payload
    * @returns {Promise<{ ok: boolean, insertId: number | null }>}
    */
-  async createUser({ email, passwordHash, isActive = 1 }) {
+  async createUser({ email, passwordHash, isActive = 1, isAdmin = 0 }) {
     const result = await query(
-      `INSERT INTO admin_users (
-        email, password_hash, is_active, created_at, updated_at
+      `INSERT INTO ${USERS_TABLE} (
+        email, password_hash, is_active, is_admin, created_at, updated_at
       ) VALUES (
-        ?, ?, ?, NOW(6), NOW(6)
+        ?, ?, ?, ?, NOW(6), NOW(6)
       )`,
-      [email, passwordHash, isActive ? 1 : 0]
+      [email, passwordHash, isActive ? 1 : 0, isAdmin ? 1 : 0]
     );
 
     return {
@@ -159,7 +177,7 @@ const adminAuthRepository = {
 
   /**
    * @param {number} id
-   * @param {{ email?: string, passwordHash?: string, isActive?: number }} patch
+   * @param {{ email?: string, passwordHash?: string, isActive?: number, isAdmin?: number }} patch
    * @returns {Promise<boolean>}
    */
   async updateUserById(id, patch) {
@@ -178,12 +196,16 @@ const adminAuthRepository = {
       updates.push("is_active = ?");
       params.push(patch.isActive);
     }
+    if (patch.isAdmin === 0 || patch.isAdmin === 1) {
+      updates.push("is_admin = ?");
+      params.push(patch.isAdmin);
+    }
     if (updates.length === 0) return false;
 
     updates.push("updated_at = NOW(6)");
 
     const result = await query(
-      `UPDATE admin_users
+      `UPDATE ${USERS_TABLE}
        SET ${updates.join(", ")}
        WHERE id = ?
        LIMIT 1`,
@@ -199,7 +221,7 @@ const adminAuthRepository = {
    */
   async disableUserById(id) {
     const result = await query(
-      `UPDATE admin_users
+      `UPDATE ${USERS_TABLE}
        SET is_active = 0,
            updated_at = NOW(6)
        WHERE id = ?
@@ -215,7 +237,7 @@ const adminAuthRepository = {
    */
   async updateLastLoginAtById(userId) {
     const result = await query(
-      `UPDATE admin_users
+      `UPDATE ${USERS_TABLE}
        SET last_login_at = NOW(6)
        WHERE id = ?
        LIMIT 1`,
@@ -228,24 +250,24 @@ const adminAuthRepository = {
    * @param {object} payload
    * @returns {Promise<{ ok: boolean, insertId: number | null, expiresAt: Date | null }>}
    */
-  async createSession({ adminUserId, tokenHash32, ttlMinutes, requestIpPacked, userAgentOrNull }) {
+  async createSession({ userId, tokenHash32, ttlMinutes, requestIpPacked, userAgentOrNull }) {
     assertTokenHash32(tokenHash32);
     const ttl = assertSessionTtlMinutes(ttlMinutes);
 
     const result = await query(
-      `INSERT INTO admin_auth_sessions (
-        admin_user_id, token_hash, status, created_at, expires_at,
+      `INSERT INTO ${SESSIONS_TABLE} (
+        user_id, token_hash, status, created_at, expires_at,
         request_ip, user_agent
       ) VALUES (
         ?, ?, 'active', NOW(6), DATE_ADD(NOW(6), INTERVAL ? MINUTE),
         ?, ?
       )`,
-      [adminUserId, tokenHash32, ttl, requestIpPacked, userAgentOrNull || null]
+      [userId, tokenHash32, ttl, requestIpPacked, userAgentOrNull || null]
     );
 
     const rows = await query(
       `SELECT id, expires_at
-       FROM admin_auth_sessions
+       FROM ${SESSIONS_TABLE}
        WHERE id = ?
        LIMIT 1`,
       [result.insertId]
@@ -269,12 +291,13 @@ const adminAuthRepository = {
     const rows = await query(
       `SELECT
           s.id AS session_id,
-          s.admin_user_id AS user_id,
+          s.user_id AS user_id,
           s.expires_at,
           s.last_used_at,
-          u.email
-       FROM admin_auth_sessions s
-       INNER JOIN admin_users u ON u.id = s.admin_user_id
+          u.email,
+          u.is_admin
+       FROM ${SESSIONS_TABLE} s
+       INNER JOIN ${USERS_TABLE} u ON u.id = s.user_id
        WHERE s.token_hash = ?
          AND s.status = 'active'
          AND s.revoked_at IS NULL
@@ -294,7 +317,7 @@ const adminAuthRepository = {
    */
   async touchSessionLastUsed(sessionId) {
     const result = await query(
-      `UPDATE admin_auth_sessions
+      `UPDATE ${SESSIONS_TABLE}
        SET last_used_at = NOW(6)
        WHERE id = ?
        LIMIT 1`,
@@ -304,7 +327,7 @@ const adminAuthRepository = {
   },
 
   /**
-   * Revoke all active sessions for an admin user.
+   * Revoke all active sessions for a user.
    * @param {number} userId
    * @param {{ exceptSessionId?: number }} [options]
    * @returns {Promise<number>}
@@ -319,10 +342,10 @@ const adminAuthRepository = {
     const params = exceptSessionId ? [userId, exceptSessionId] : [userId];
 
     const result = await query(
-      `UPDATE admin_auth_sessions
+      `UPDATE ${SESSIONS_TABLE}
        SET status = 'revoked',
            revoked_at = NOW(6)
-       WHERE admin_user_id = ?
+       WHERE user_id = ?
          AND status = 'active'
          AND revoked_at IS NULL
          ${whereExtra}`,

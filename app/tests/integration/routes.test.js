@@ -70,10 +70,42 @@ describe("routes", () => {
     expect(res.body).toEqual({ error: "missing_api_key" });
   });
 
-  test("POST /admin/login without params returns invalid_params(email)", async () => {
-    const res = await request(app).post("/admin/login").send({});
+  test("POST /auth/login without params returns invalid_params(email)", async () => {
+    const res = await request(app).post("/auth/login").send({});
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_params", field: "email" });
+  });
+
+  test("POST /auth/register without params returns invalid_params(email)", async () => {
+    const res = await request(app).post("/auth/register").send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_params", field: "email" });
+  });
+
+  test("GET /auth/me without auth token returns missing_auth_token", async () => {
+    const res = await request(app).get("/auth/me");
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "missing_auth_token" });
+  });
+
+  test("POST /auth/password/forgot without params returns invalid_params(email)", async () => {
+    const res = await request(app).post("/auth/password/forgot").send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_params", field: "email" });
+  });
+
+  test("POST /auth/password/reset without token returns invalid_params(token)", async () => {
+    const res = await request(app).post("/auth/password/reset").send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_params", field: "token" });
+  });
+
+  test("POST /auth/password/reset with invalid token returns invalid_token", async () => {
+    const res = await request(app)
+      .post("/auth/password/reset")
+      .send({ token: "!!!", new_password: "StrongPassword123" });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_token" });
   });
 
   test("GET /admin/domains without admin token returns missing_admin_token", async () => {

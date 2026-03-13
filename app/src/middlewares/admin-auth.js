@@ -4,29 +4,13 @@
  * @fileoverview Admin bearer-token authentication middleware.
  */
 
-const crypto = require("crypto");
-const { config } = require("../config");
 const { adminAuthRepository } = require("../repositories/admin-auth-repository");
+const {
+  parseAuthToken,
+  expectedTokenHexLength,
+  getAuthSessionByToken,
+} = require("./auth");
 const { logError } = require("../lib/logger");
-
-function sha256Buffer(value) {
-  return crypto.createHash("sha256").update(String(value), "utf8").digest();
-}
-
-function expectedTokenHexLength() {
-  const bytes = Number(config.adminAuthTokenBytes ?? 32);
-  if (!Number.isFinite(bytes) || bytes < 16 || bytes > 64) return 64;
-  return Math.floor(bytes) * 2;
-}
-
-function parseAdminToken(req) {
-  const authorization = String(req.header("Authorization") || "").trim();
-  if (authorization) {
-    const match = authorization.match(/^Bearer\s+(.+)$/i);
-    if (match) return String(match[1] || "").trim().toLowerCase();
-  }
-  return String(req.header("X-Admin-Token") || "").trim().toLowerCase();
-}
 
 /**
  * Require a valid admin bearer token.
@@ -36,7 +20,7 @@ function parseAdminToken(req) {
  */
 async function requireAdminAuth(req, res, next) {
   try {
-    const token = parseAdminToken(req);
+    const token = parseAuthToken(req, { allowAdminHeader: true });
     if (!token) return res.status(401).json({ error: "missing_admin_token" });
 
     const expectedLen = expectedTokenHexLength();
@@ -44,16 +28,18 @@ async function requireAdminAuth(req, res, next) {
       return res.status(401).json({ error: "invalid_admin_token_format" });
     }
 
-    const tokenHash32 = sha256Buffer(token);
-    const session = await adminAuthRepository.getActiveSessionByTokenHash(tokenHash32);
+    const session = await getAuthSessionByToken(token);
     if (!session) return res.status(401).json({ error: "invalid_or_expired_admin_token" });
+    if (Number(session.is_admin || 0) !== 1) return res.status(403).json({ error: "admin_required" });
 
-    req.admin_auth = {
+    req.auth = {
       session_id: session.session_id,
       user_id: session.user_id,
       email: session.email,
+      is_admin: Number(session.is_admin || 0),
       expires_at: session.expires_at,
     };
+    req.admin_auth = req.auth;
 
     adminAuthRepository.touchSessionLastUsed(session.session_id).catch(() => {});
     return next();

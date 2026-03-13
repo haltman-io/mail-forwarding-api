@@ -67,11 +67,26 @@ const rateLimitHelpers = {
     rateLimitHelpers.normalizeString(req.query?.token || req.params?.token || ""),
 
   /**
-   * Normalize admin login email from request body/query.
+   * Normalize token values from body/query/params for stable keys.
    * @param {import("express").Request} req
    * @returns {string}
    */
-  normalizeAdminLoginEmail: (req) => rateLimitHelpers.normalizeBodyEmail(req, "email"),
+  normalizeToken: (req) =>
+    rateLimitHelpers.normalizeString(req.body?.token || req.query?.token || req.params?.token || ""),
+
+  /**
+   * Normalize auth email from request body/query.
+   * @param {import("express").Request} req
+   * @returns {string}
+   */
+  normalizeAuthEmail: (req) => rateLimitHelpers.normalizeBodyEmail(req, "email"),
+
+  /**
+   * Backward-compatible alias used by older admin login limiters.
+   * @param {import("express").Request} req
+   * @returns {string}
+   */
+  normalizeAdminLoginEmail: (req) => rateLimitHelpers.normalizeAuthEmail(req),
 };
 
 module.exports = { rateLimitHelpers };
