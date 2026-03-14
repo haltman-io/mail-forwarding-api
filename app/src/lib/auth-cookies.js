@@ -28,11 +28,18 @@ function shouldUseSecureCookies(envName) {
   return String(envName || "").trim().toLowerCase() === "prod";
 }
 
-function buildCookieOptions({ maxAgeMs, envName }) {
+function normalizeSameSite(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "strict") return "strict";
+  if (normalized === "none") return "none";
+  return "lax";
+}
+
+function buildCookieOptions({ maxAgeMs, envName, sameSite = "lax" }) {
   return {
     httpOnly: true,
     secure: shouldUseSecureCookies(envName),
-    sameSite: "lax",
+    sameSite: normalizeSameSite(sameSite),
     path: "/",
     maxAge: maxAgeMs,
   };
@@ -51,8 +58,8 @@ function setRefreshCookie(res, token, options) {
   res.cookie(REFRESH_COOKIE_NAME, token, options);
 }
 
-function clearAuthCookies(res, envName) {
-  const cookieOptions = buildCookieOptions({ maxAgeMs: 0, envName });
+function clearAuthCookies(res, envName, sameSite = "lax") {
+  const cookieOptions = buildCookieOptions({ maxAgeMs: 0, envName, sameSite });
   if (typeof res.clearCookie === "function") {
     res.clearCookie(ACCESS_COOKIE_NAME, cookieOptions);
     res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions);
@@ -68,6 +75,7 @@ module.exports = {
   REFRESH_COOKIE_NAME,
   buildCookieOptions,
   clearAuthCookies,
+  normalizeSameSite,
   parseCookiesHeader,
   readCookie,
   setAccessCookie,

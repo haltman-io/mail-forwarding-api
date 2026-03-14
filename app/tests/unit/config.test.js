@@ -33,6 +33,13 @@ describe("config", () => {
     ]);
   });
 
+  test("parses AUTH_COOKIE_SAME_SITE when provided", () => {
+    process.env.AUTH_COOKIE_SAME_SITE = "none";
+    jest.resetModules();
+    const { config } = require(path.join("..", "..", "src", "config"));
+    expect(config.authCookieSameSite).toBe("none");
+  });
+
   test("throws on boot when JWT_ACCESS_KID is missing", () => {
     delete process.env.JWT_ACCESS_KID;
     jest.resetModules();

@@ -27,4 +27,16 @@ describe("auth-cookies", () => {
       })
     );
   });
+
+  test("supports SameSite=None when explicitly requested", () => {
+    expect(buildCookieOptions({ maxAgeMs: 1000, envName: "prod", sameSite: "none" })).toEqual(
+      expect.objectContaining({
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        path: "/",
+        maxAge: 1000,
+      })
+    );
+  });
 });

@@ -112,6 +112,7 @@ const dotenv = require("dotenv");
  * @property {string} passwordResetEmailSubject
  * @property {number} authRefreshTtlDays
  * @property {number} authMaxActiveSessionFamilies
+ * @property {"lax" | "strict" | "none"} authCookieSameSite
  * @property {string} authCsrfSecret
  * @property {string} jwtAccessPrivateKey
  * @property {string} jwtAccessKid
@@ -286,6 +287,20 @@ function toPem(value) {
 }
 
 /**
+ * Normalize cookie SameSite policy.
+ * @param {string} key
+ * @param {"lax" | "strict" | "none"} fallback
+ * @returns {"lax" | "strict" | "none"}
+ */
+function getSameSite(key, fallback = "lax") {
+  const raw = getString(key, "").trim().toLowerCase();
+  if (raw === "lax" || raw === "strict" || raw === "none") {
+    return raw;
+  }
+  return fallback;
+}
+
+/**
  * Build the application configuration from environment variables.
  * @param {{ envName: string, envFile: string | null }} meta
  * @returns {AppConfig}
@@ -443,6 +458,7 @@ function buildConfig(meta) {
 
     authRefreshTtlDays: getInt("AUTH_REFRESH_TTL_DAYS", 30),
     authMaxActiveSessionFamilies: getInt("AUTH_MAX_ACTIVE_SESSION_FAMILIES", 5),
+    authCookieSameSite: getSameSite("AUTH_COOKIE_SAME_SITE", "lax"),
     authCsrfSecret: getString("AUTH_CSRF_SECRET", ""),
     jwtAccessPrivateKey: getString("JWT_ACCESS_PRIVATE_KEY", ""),
     jwtAccessKid: getString("JWT_ACCESS_KID", ""),
@@ -492,6 +508,9 @@ function validateConfig(config) {
     config.corsAllowedOrigins.includes("*")
   ) {
     warnings.push("CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not valid for cookie auth.");
+  }
+  if (config.authCookieSameSite === "none" && config.envName !== "prod") {
+    warnings.push("AUTH_COOKIE_SAME_SITE=none usually requires HTTPS + Secure cookies to work in browsers.");
   }
   if (!config.authCsrfSecret) throw new Error("missing_AUTH_CSRF_SECRET");
   if (!config.jwtAccessPrivateKey) throw new Error("missing_JWT_ACCESS_PRIVATE_KEY");
