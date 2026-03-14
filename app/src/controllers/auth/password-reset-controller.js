@@ -119,7 +119,7 @@ async function resetPassword(req, res) {
 
     if (!result.ok) return res.status(400).json({ error: "invalid_or_expired" });
 
-    clearAuthCookies(res, config.envName || config.appEnv, config.authCookieSameSite);
+    clearAuthCookies(res, config.appEnv || config.envName, config.authCookieSameSite);
     setNoStore(res);
     return res.status(200).json({
       ok: true,

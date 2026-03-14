@@ -178,7 +178,10 @@ function loadDotenv() {
         throw result.error;
       }
       loadedFile = candidate.filePath;
-      loadedEnvName = candidate.envName;
+      loadedEnvName =
+        path.basename(candidate.filePath).toLowerCase() === ".env"
+          ? resolveEnvName()
+          : candidate.envName;
       break;
     }
   }
@@ -496,6 +499,7 @@ function buildConfig(meta) {
  */
 function validateConfig(config) {
   const warnings = [];
+  const effectiveEnvName = String(config.appEnv || config.envName || "").trim().toLowerCase();
 
   if (!config.smtpHost) warnings.push("SMTP_HOST is empty (email confirmation will fail).");
   if (!config.smtpFrom) warnings.push("SMTP_FROM is empty (email confirmation will fail).");
@@ -509,7 +513,7 @@ function validateConfig(config) {
   ) {
     warnings.push("CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not valid for cookie auth.");
   }
-  if (config.authCookieSameSite === "none" && config.envName !== "prod") {
+  if (config.authCookieSameSite === "none" && effectiveEnvName !== "prod") {
     warnings.push("AUTH_COOKIE_SAME_SITE=none usually requires HTTPS + Secure cookies to work in browsers.");
   }
   if (!config.authCsrfSecret) throw new Error("missing_AUTH_CSRF_SECRET");

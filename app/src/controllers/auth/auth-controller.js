@@ -108,7 +108,7 @@ function setNoStore(res) {
 }
 
 function setAuthCookies(res, { accessToken, refreshToken, refreshExpiresAt }) {
-  const envName = config.envName || config.appEnv;
+  const envName = config.appEnv || config.envName;
   const sameSite = config.authCookieSameSite;
   const accessCookieOptions = buildCookieOptions({
     maxAgeMs: Number(config.jwtAccessTtlSeconds ?? 600) * 1000,
@@ -130,7 +130,7 @@ function setAuthCookies(res, { accessToken, refreshToken, refreshExpiresAt }) {
 }
 
 function clearCookies(res) {
-  clearAuthCookies(res, config.envName || config.appEnv, config.authCookieSameSite);
+  clearAuthCookies(res, config.appEnv || config.envName, config.authCookieSameSite);
 }
 
 function genericSignUpResponse(res) {
