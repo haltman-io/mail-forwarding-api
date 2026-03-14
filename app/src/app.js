@@ -12,6 +12,22 @@ const { router } = require("./routes");
 const { requestLogger } = require("./middlewares/request-logger");
 const { denyBannedIp } = require("./middlewares/ip-ban");
 const { errorHandler } = require("./middlewares/error-handler");
+const { isOriginAllowed } = require("./lib/cors-origin-policy");
+
+function buildCorsOptions() {
+  return {
+    credentials: Boolean(config.corsAllowCredentials),
+    async origin(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      try {
+        return callback(null, await isOriginAllowed(origin));
+      } catch (_) {
+        return callback(null, false);
+      }
+    },
+  };
+}
 
 const app = express();
 
@@ -27,7 +43,7 @@ app.use(requestLogger);
 app.use(denyBannedIp);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors());
+app.use(cors(buildCorsOptions()));
 app.disable("x-powered-by");
 
 app.use("/", router);

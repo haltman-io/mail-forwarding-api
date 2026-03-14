@@ -21,4 +21,15 @@ describe("config", () => {
     const { config } = require(path.join("..", "..", "src", "config"));
     expect(config.appPort).toBe(8080);
   });
+
+  test("parses CORS_ALLOWED_ORIGINS as a unique trimmed list", () => {
+    process.env.CORS_ALLOWED_ORIGINS =
+      " http://localhost:3000 , http://127.0.0.1:5173 , http://localhost:3000 ";
+    jest.resetModules();
+    const { config } = require(path.join("..", "..", "src", "config"));
+    expect(config.corsAllowedOrigins).toEqual([
+      "http://localhost:3000",
+      "http://127.0.0.1:5173",
+    ]);
+  });
 });

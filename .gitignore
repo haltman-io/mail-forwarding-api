@@ -8,3 +8,4 @@ README.md
 @DOCS/BACKEND_RESPONSES.md
 .gitignore
 @DOCS
+app/.env_old

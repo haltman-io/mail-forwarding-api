@@ -1,5 +1,7 @@
 process.env.APP_ENV = "test";
 process.env.APP_PUBLIC_URL = "http://localhost:8080";
+process.env.CORS_ALLOWED_ORIGINS = "http://localhost:3000";
+process.env.CORS_ALLOW_CREDENTIALS = "true";
 process.env.SMTP_HOST = "smtp.test";
 process.env.SMTP_FROM = "Test <test@example.com>";
 process.env.MARIADB_HOST = "127.0.0.1";

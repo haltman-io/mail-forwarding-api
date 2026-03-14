@@ -21,6 +21,8 @@ const dotenv = require("dotenv");
  * @property {number} appPort
  * @property {number} trustProxy
  * @property {string} logLevel
+ * @property {string[]} corsAllowedOrigins
+ * @property {boolean} corsAllowCredentials
  * @property {string} appPublicUrl
  * @property {string} emailConfirmEndpoint
  * @property {number} emailConfirmationTtlMinutes
@@ -259,6 +261,26 @@ function getJsonObject(key, fallback = {}) {
 }
 
 /**
+ * Normalize a comma-separated string list env var.
+ * @param {string} key
+ * @param {string[]} fallback
+ * @returns {string[]}
+ */
+function getStringList(key, fallback = []) {
+  const raw = getString(key, "").trim();
+  if (!raw) return fallback;
+
+  return Array.from(
+    new Set(
+      raw
+        .split(",")
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+/**
  * Build the application configuration from environment variables.
  * @param {{ envName: string, envFile: string | null }} meta
  * @returns {AppConfig}
@@ -272,6 +294,8 @@ function buildConfig(meta) {
     appPort: getInt("APP_PORT", 8080),
     trustProxy: getInt("TRUST_PROXY", 1),
     logLevel: getString("LOG_LEVEL", meta.envName === "dev" ? "debug" : "info"),
+    corsAllowedOrigins: getStringList("CORS_ALLOWED_ORIGINS", []),
+    corsAllowCredentials: getBool("CORS_ALLOW_CREDENTIALS", true),
 
     appPublicUrl: getString("APP_PUBLIC_URL", ""),
     emailConfirmEndpoint: getString("EMAIL_CONFIRM_CONFIRM_ENDPOINT", "/forward/confirm"),
@@ -458,6 +482,12 @@ function validateConfig(config) {
     warnings.push("MariaDB connection is not fully configured.");
   }
   if (!config.appPublicUrl) warnings.push("APP_PUBLIC_URL is empty (confirmation links will be invalid).");
+  if (
+    Array.isArray(config.corsAllowedOrigins) &&
+    config.corsAllowedOrigins.includes("*")
+  ) {
+    warnings.push("CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not valid for cookie auth.");
+  }
   if (!config.checkDnsBaseUrl) throw new Error("missing_CHECKDNS_BASE_URL");
   if (!config.checkDnsToken) throw new Error("missing_CHECKDNS_TOKEN");
 
