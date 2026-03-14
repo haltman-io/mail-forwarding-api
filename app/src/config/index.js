@@ -10,6 +10,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const dotenv = require("dotenv");
 
 /**
@@ -280,6 +281,10 @@ function getStringList(key, fallback = []) {
   );
 }
 
+function toPem(value) {
+  return String(value || "").replace(/\\n/g, "\n").trim();
+}
+
 /**
  * Build the application configuration from environment variables.
  * @param {{ envName: string, envFile: string | null }} meta
@@ -487,6 +492,34 @@ function validateConfig(config) {
     config.corsAllowedOrigins.includes("*")
   ) {
     warnings.push("CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not valid for cookie auth.");
+  }
+  if (!config.authCsrfSecret) throw new Error("missing_AUTH_CSRF_SECRET");
+  if (!config.jwtAccessPrivateKey) throw new Error("missing_JWT_ACCESS_PRIVATE_KEY");
+  if (!config.jwtAccessKid) throw new Error("missing_JWT_ACCESS_KID");
+  if (
+    !config.jwtAccessVerificationKeys ||
+    typeof config.jwtAccessVerificationKeys !== "object" ||
+    Object.keys(config.jwtAccessVerificationKeys).length === 0
+  ) {
+    throw new Error("missing_JWT_ACCESS_VERIFY_KEYS");
+  }
+
+  const activeKid = String(config.jwtAccessKid || "").trim();
+  const activeVerificationKeyPem = toPem(config.jwtAccessVerificationKeys?.[activeKid]);
+  if (!activeVerificationKeyPem) {
+    throw new Error("missing_JWT_ACCESS_VERIFY_KEY_FOR_ACTIVE_KID");
+  }
+
+  try {
+    crypto.createPrivateKey(toPem(config.jwtAccessPrivateKey));
+  } catch (_) {
+    throw new Error("invalid_JWT_ACCESS_PRIVATE_KEY");
+  }
+
+  try {
+    crypto.createPublicKey(activeVerificationKeyPem);
+  } catch (_) {
+    throw new Error("invalid_JWT_ACCESS_VERIFY_KEY_FOR_ACTIVE_KID");
   }
   if (!config.checkDnsBaseUrl) throw new Error("missing_CHECKDNS_BASE_URL");
   if (!config.checkDnsToken) throw new Error("missing_CHECKDNS_TOKEN");

@@ -32,4 +32,12 @@ describe("config", () => {
       "http://127.0.0.1:5173",
     ]);
   });
+
+  test("throws on boot when JWT_ACCESS_KID is missing", () => {
+    delete process.env.JWT_ACCESS_KID;
+    jest.resetModules();
+    expect(() => require(path.join("..", "..", "src", "config"))).toThrow(
+      "missing_JWT_ACCESS_KID"
+    );
+  });
 });
