@@ -8,15 +8,23 @@ const crypto = require("crypto");
 const { config } = require("../../config");
 const { adminAuthRepository } = require("../../repositories/admin-auth-repository");
 const {
+  authRegisterRequestsRepository,
+} = require("../../repositories/auth-register-requests-repository");
+const {
   hashAdminPassword,
   verifyAdminPassword,
   MIN_PASSWORD_LEN,
   MAX_PASSWORD_LEN,
 } = require("../../services/admin-password-service");
+const { sendAuthRegisterEmail } = require("../../services/auth-register-email-service");
 const { sendAdminLoginNotificationEmail } = require("../../services/admin-login-email-service");
 const { parseMailbox } = require("../../lib/mailbox-validation");
 const { packIp16 } = require("../../lib/ip-pack");
 const { logError } = require("../../lib/logger");
+const {
+  normalizeConfirmationCode,
+  isConfirmationCodeValid,
+} = require("../../lib/confirmation-code");
 
 const FALLBACK_DUMMY_ADMIN_PASSWORD_HASH =
   "$argon2id$v=19$m=131072,t=4,p=1$L/mffIBj9C0gzyzOnmkUHQ$FgGLHMi1bdENEMchXbgdisn0+oOmolSiP//2841TDBM";
@@ -107,24 +115,68 @@ async function registerUser(req, res) {
     if (existing) return res.status(409).json({ error: "user_taken", email });
 
     const passwordHash = await hashAdminPassword(password);
-    const created = await adminAuthRepository.createUser({
+    const delivery = await sendAuthRegisterEmail({
       email,
       passwordHash,
-      isActive: 1,
-      isAdmin: 0,
+      requestIpText: req.ip,
+      userAgent: String(req.headers["user-agent"] || ""),
+      requestOrigin: req.get("origin") || "",
+      requestReferer: req.get("referer") || req.get("referrer") || "",
     });
-    const user = await adminAuthRepository.getUserById(created.insertId);
 
-    return res.status(201).json({
+    res.set("Cache-Control", "no-store");
+    return res.status(202).json({
       ok: true,
-      created: true,
-      user: toPublicAuthUser(user),
+      action: "register",
+      accepted: true,
+      verification: {
+        sent: Boolean(delivery.sent),
+        ttl_minutes: Number(delivery.ttl_minutes || config.authRegisterTtlMinutes || 15),
+      },
     });
   } catch (err) {
-    if (err && err.code === "ER_DUP_ENTRY") {
+    if (err && (err.code === "ER_DUP_ENTRY" || err.code === "user_taken")) {
       return res.status(409).json({ error: "user_taken" });
     }
     logError("auth.register.error", err, req);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+/**
+ * GET /auth/register/confirm?token=...
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function confirmRegistration(req, res) {
+  try {
+    const token = normalizeConfirmationCode(req.query?.token || req.body?.token || "");
+    if (!isConfirmationCodeValid(token)) {
+      return res.status(400).json({ error: "invalid_token" });
+    }
+
+    const result = await authRegisterRequestsRepository.consumePendingAndCreateUserTx({
+      tokenHash32: sha256Buffer(token),
+    });
+
+    if (!result.ok) {
+      if (result.reason === "user_taken") {
+        return res.status(409).json({ error: "user_taken", email: result.email || undefined });
+      }
+      return res.status(400).json({ error: "invalid_or_expired" });
+    }
+
+    res.set("Cache-Control", "no-store");
+    return res.status(201).json({
+      ok: true,
+      action: "register_confirm",
+      confirmed: true,
+      created: true,
+      login_required: true,
+      user: toPublicAuthUser(result.user),
+    });
+  } catch (err) {
+    logError("auth.register.confirm.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
@@ -254,6 +306,7 @@ async function getMe(req, res) {
 
 module.exports = {
   registerUser,
+  confirmRegistration,
   login,
   getMe,
 };

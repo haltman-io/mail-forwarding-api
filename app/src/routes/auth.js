@@ -7,7 +7,12 @@
 const express = require("express");
 const { rateLimit } = require("../middlewares/rate-limit");
 const { requireAuth } = require("../middlewares/auth");
-const { registerUser, login, getMe } = require("../controllers/auth/auth-controller");
+const {
+  registerUser,
+  confirmRegistration,
+  login,
+  getMe,
+} = require("../controllers/auth/auth-controller");
 const {
   requestPasswordReset,
   resetPassword,
@@ -21,6 +26,14 @@ authRouter.post(
   rateLimit.authRegisterByIp,
   rateLimit.authRegisterByEmail,
   registerUser
+);
+
+authRouter.get(
+  "/register/confirm",
+  rateLimit.globalLimiter,
+  rateLimit.authRegisterConfirmByIp,
+  rateLimit.authRegisterConfirmByToken,
+  confirmRegistration
 );
 
 authRouter.post(

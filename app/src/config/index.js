@@ -77,6 +77,8 @@ const dotenv = require("dotenv");
  * @property {number} rlCredentialsConfirmPer10MinPerToken
  * @property {number} rlAuthRegisterPerHourPerIp
  * @property {number} rlAuthRegisterPerHourPerEmail
+ * @property {number} rlAuthRegisterConfirmPer10MinPerIp
+ * @property {number} rlAuthRegisterConfirmPer10MinPerToken
  * @property {number} rlAuthPasswordResetRequestPerHourPerIp
  * @property {number} rlAuthPasswordResetRequestPerHourPerEmail
  * @property {number} rlAuthPasswordResetConfirmPer10MinPerIp
@@ -95,6 +97,11 @@ const dotenv = require("dotenv");
  * @property {number} apiCredentialsEmailTokenLen
  * @property {number} apiCredentialsEmailMaxSends
  * @property {string} apiCredentialsEmailSubject
+ * @property {string} authRegisterConfirmEndpoint
+ * @property {number} authRegisterTtlMinutes
+ * @property {number} authRegisterResendCooldownSeconds
+ * @property {number} authRegisterMaxSends
+ * @property {string} authRegisterEmailSubject
  * @property {number} passwordResetTtlMinutes
  * @property {number} passwordResetResendCooldownSeconds
  * @property {number} passwordResetMaxSends
@@ -314,6 +321,11 @@ function buildConfig(meta) {
     // auth register
     rlAuthRegisterPerHourPerIp: getInt("RL_AUTH_REGISTER_PER_HOUR_PER_IP", 10),
     rlAuthRegisterPerHourPerEmail: getInt("RL_AUTH_REGISTER_PER_HOUR_PER_EMAIL", 3),
+    rlAuthRegisterConfirmPer10MinPerIp: getInt("RL_AUTH_REGISTER_CONFIRM_PER_10MIN_PER_IP", 30),
+    rlAuthRegisterConfirmPer10MinPerToken: getInt(
+      "RL_AUTH_REGISTER_CONFIRM_PER_10MIN_PER_TOKEN",
+      10
+    ),
 
     // auth password reset
     rlAuthPasswordResetRequestPerHourPerIp: getInt("RL_AUTH_PASSWORD_RESET_REQUEST_PER_HOUR_PER_IP", 10),
@@ -349,6 +361,15 @@ function buildConfig(meta) {
       "API_CREDENTIALS_EMAIL_SUBJECT",
       "Your API token request"
     ),
+
+    authRegisterConfirmEndpoint: getString(
+      "AUTH_REGISTER_CONFIRM_ENDPOINT",
+      "/auth/register/confirm"
+    ),
+    authRegisterTtlMinutes: getInt("AUTH_REGISTER_TTL_MINUTES", 15),
+    authRegisterResendCooldownSeconds: getInt("AUTH_REGISTER_RESEND_COOLDOWN_SECONDS", 60),
+    authRegisterMaxSends: getInt("AUTH_REGISTER_MAX_SENDS", 3),
+    authRegisterEmailSubject: getString("AUTH_REGISTER_EMAIL_SUBJECT", "Verify your email"),
 
     passwordResetTtlMinutes: getInt("PASSWORD_RESET_TTL_MINUTES", 15),
     passwordResetResendCooldownSeconds: getInt("PASSWORD_RESET_RESEND_COOLDOWN_SECONDS", 60),

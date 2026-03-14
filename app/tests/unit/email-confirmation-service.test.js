@@ -21,6 +21,7 @@ function loadEmailConfirmationServiceWithDomainList({ activeNames = [], rejectWi
 
 function loadApiCredentialsEmailService({
   upsertResult = { action: "created", token_plain: "123456", pending: null },
+  subjectTemplate = "Your API token request",
 } = {}) {
   const upsertPendingByEmailTx = jest.fn().mockResolvedValue(upsertResult);
   const packIp16 = jest.fn((ip) => (ip ? `packed:${ip}` : null));
@@ -29,6 +30,25 @@ function loadApiCredentialsEmailService({
 
   let service;
   jest.isolateModules(() => {
+    jest.doMock("../../src/config", () => ({
+      config: {
+        appPublicUrl: "http://localhost:8080",
+        apiCredentialsConfirmEndpoint: "/api/credentials/confirm",
+        apiCredentialsEmailTtlMinutes: 15,
+        apiCredentialsEmailResendCooldownSeconds: 60,
+        apiCredentialsEmailMaxSends: 3,
+        apiCredentialsEmailSubject: subjectTemplate,
+        smtpHost: "smtp.example.com",
+        smtpPort: 587,
+        smtpSecure: false,
+        smtpAuthEnabled: true,
+        smtpUser: "smtp-user",
+        smtpPass: "smtp-pass",
+        smtpFrom: "Test <test@example.com>",
+        smtpHeloName: "",
+        smtpTlsRejectUnauthorized: true,
+      },
+    }));
     jest.doMock("nodemailer", () => ({ createTransport }));
     jest.doMock("../../src/repositories/api-token-requests-repository", () => ({
       apiTokenRequestsRepository: { upsertPendingByEmailTx },
@@ -164,31 +184,26 @@ describe("api-credentials-email-service", () => {
   });
 
   test("supports action controlled by API subject env template", async () => {
-    process.env.API_CREDENTIALS_EMAIL_SUBJECT = "alias:create";
+    const { service, sendMail } = loadApiCredentialsEmailService({
+      upsertResult: {
+        action: "created",
+        token_plain: "777999",
+        pending: null,
+      },
+      subjectTemplate: "alias:create",
+    });
 
-    try {
-      const { service, sendMail } = loadApiCredentialsEmailService({
-        upsertResult: {
-          action: "created",
-          token_plain: "777999",
-          pending: null,
-        },
-      });
+    await service.sendApiTokenRequestEmail({
+      email: "user@example.com",
+      days: 7,
+      requestIpText: "198.51.100.42",
+      userAgent: "ua",
+    });
 
-      await service.sendApiTokenRequestEmail({
-        email: "user@example.com",
-        days: 7,
-        requestIpText: "198.51.100.42",
-        userAgent: "ua",
-      });
-
-      const mail = sendMail.mock.calls[0][0];
-      expect(mail.subject).toBe(
-        "777999 is your verification code | localhost / alias:create"
-      );
-    } finally {
-      delete process.env.API_CREDENTIALS_EMAIL_SUBJECT;
-    }
+    const mail = sendMail.mock.calls[0][0];
+    expect(mail.subject).toBe(
+      "777999 is your verification code | localhost / alias:create"
+    );
   });
 
   test("returns cooldown without sending email", async () => {

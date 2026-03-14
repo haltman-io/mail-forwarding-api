@@ -82,6 +82,12 @@ describe("routes", () => {
     expect(res.body).toEqual({ error: "invalid_params", field: "email" });
   });
 
+  test("GET /auth/register/confirm with invalid token returns invalid_token", async () => {
+    const res = await request(app).get("/auth/register/confirm?token=!!!");
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_token" });
+  });
+
   test("GET /auth/me without auth token returns missing_auth_token", async () => {
     const res = await request(app).get("/auth/me");
     expect(res.status).toBe(401);

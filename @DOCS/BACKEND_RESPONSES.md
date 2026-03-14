@@ -78,7 +78,7 @@ Required params: none
 | 302 | `REDIRECT` | redirect | `Location: https://forward.haltman.io/` |
 
 ## `POST /auth/register`
-Middlewares: global rate limit + auth-register rate limits
+Middlewares: global rate limit + auth-register request rate limits
 
 Required params:
 - `email` (body, required)
@@ -87,10 +87,26 @@ Required params:
 ### Responses
 | Status | Indicator | Response schema | Additional data |
 |---|---|---|---|
-| 201 | `CREATED` | `{ "ok": true, "created": true, "user": { "id": "number", "email": "string", "is_active": "0|1", "is_admin": "boolean", "created_at": "datetime", "updated_at": "datetime", "last_login_at": "datetime|null" } }` | Public registration always creates `is_admin=false`. |
+| 202 | `ACCEPTED` | `{ "ok": true, "action": "register", "accepted": true, "verification": { "sent": "boolean", "ttl_minutes": "number" } }` | Public registration no longer creates the user row immediately. It creates or rotates a pending email-verification request. |
 | 400 | `VALIDATION_ERROR` | `{ "error": "invalid_params", "field": "email|password", "hint?": "string" }` | Password hint is included for invalid length. |
 | 409 | `CONFLICT` | `{ "error": "user_taken", "email?": "string" }` | Email already exists. |
 | 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_registrations_ip`, `too_many_registrations_email` (`where: auth_register`). |
+| 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
+
+## `GET /auth/register/confirm`
+Middlewares: global rate limit + auth-register confirm rate limits
+
+Required params:
+- `token` (query, required, 6-digit code)
+
+### Responses
+| Status | Indicator | Response schema | Additional data |
+|---|---|---|---|
+| 201 | `CREATED` | `{ "ok": true, "action": "register_confirm", "confirmed": true, "created": true, "login_required": true, "user": { "id": "number", "email": "string", "is_active": "0|1", "is_admin": "boolean", "created_at": "datetime", "updated_at": "datetime", "last_login_at": "datetime|null" } }` | The user row is created and active only after successful email verification. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_token" }` | Invalid token format. |
+| 400 | `VALIDATION_ERROR` | `{ "error": "invalid_or_expired" }` | Token already used, expired or not found. |
+| 409 | `CONFLICT` | `{ "error": "user_taken", "email?": "string" }` | Email was taken after the pending verification was issued. |
+| 429 | `RATE_LIMITED` | Global: default limiter text OR route limiter JSON | Route limiter reasons: `too_many_requests_ip`, `too_many_requests_token` (`where: auth_register_confirm`). |
 | 500 | `SERVER_ERROR` | `{ "error": "internal_error" }` | Generic failure path. |
 
 ## `POST /auth/login`

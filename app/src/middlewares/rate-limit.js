@@ -598,6 +598,47 @@ const rateLimit = {
     );
   },
 
+  get authRegisterConfirmByIp() {
+    return createRateLimiter(
+      {
+        windowMs: 10 * 60 * 1000,
+        limit: Number(config.rlAuthRegisterConfirmPer10MinPerIp ?? 30),
+        skip: () => Number(config.rlAuthRegisterConfirmPer10MinPerIp ?? 30) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "auth_register_confirm",
+          reason: "too_many_requests_ip",
+        },
+        keyGenerator: keyByIp,
+      },
+      "auth_register_confirm_ip"
+    );
+  },
+
+  get authRegisterConfirmByToken() {
+    return createRateLimiter(
+      {
+        windowMs: 10 * 60 * 1000,
+        limit: Number(config.rlAuthRegisterConfirmPer10MinPerToken ?? 10),
+        skip: () => Number(config.rlAuthRegisterConfirmPer10MinPerToken ?? 10) === 0,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+          error: "rate_limited",
+          where: "auth_register_confirm",
+          reason: "too_many_requests_token",
+        },
+        keyGenerator: (req) => {
+          const token = rateLimitHelpers.normalizeToken(req);
+          return `auth_register_confirm:${token || "missing"}`;
+        },
+      },
+      "auth_register_confirm_token"
+    );
+  },
+
   get authPasswordResetRequestByIp() {
     return createRateLimiter(
       {

@@ -85,7 +85,8 @@ app/
 
 ### Authentication
 
-- `POST /auth/register` (body: `email`, `password`) creates a common user account
+- `POST /auth/register` (body: `email`, `password`) starts common-user registration and sends an email verification token
+- `GET /auth/register/confirm?token=...` consumes the one-time verification token and activates the account
 - `POST /auth/login` (body: `email`, `password`) authenticates any active user and returns a bearer token plus `user.is_admin`
 - `POST /auth/password/forgot` (body: `email`) requests a single-use password reset code valid for 15 minutes
 - `POST /auth/password/reset` (body: `token`, `new_password`) consumes the reset code, changes the password and revokes active sessions
