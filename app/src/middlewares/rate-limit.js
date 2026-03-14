@@ -497,11 +497,11 @@ const rateLimit = {
         message: {
           error: "rate_limited",
           where: "auth_login",
-          reason: "too_many_failed_attempts_email",
+          reason: "too_many_failed_attempts_identifier",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAuthEmail(req);
-          return `auth_login_email:${email || "missing"}`;
+          const identifier = rateLimitHelpers.normalizeAuthIdentifier(req);
+          return `auth_login_identifier:${identifier || "missing"}`;
         },
       },
       "auth_login_fail_email"
@@ -521,10 +521,10 @@ const rateLimit = {
         message: {
           error: "rate_limited",
           where: "auth_login",
-          reason: "too_many_failed_attempts_email_ip_heavy",
+          reason: "too_many_failed_attempts_identifier_ip_heavy",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAuthEmail(req);
+          const email = rateLimitHelpers.normalizeAuthIdentifier(req);
           const ip = keyByIp(req);
           return `auth_login_heavy:${email || "missing"}:${ip}`;
         },
@@ -546,10 +546,10 @@ const rateLimit = {
         message: {
           error: "rate_limited",
           where: "auth_login",
-          reason: "too_many_failed_attempts_email_ip",
+          reason: "too_many_failed_attempts_identifier_ip",
         },
         keyGenerator: (req) => {
-          const email = rateLimitHelpers.normalizeAuthEmail(req);
+          const email = rateLimitHelpers.normalizeAuthIdentifier(req);
           const ip = keyByIp(req);
           return `auth_login_fast:${email || "missing"}:${ip}`;
         },

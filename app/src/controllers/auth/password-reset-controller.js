@@ -16,19 +16,10 @@ const {
   MAX_PASSWORD_LEN,
 } = require("../../services/admin-password-service");
 const { sendPasswordResetEmail } = require("../../services/password-reset-email-service");
-const { parseMailbox } = require("../../lib/mailbox-validation");
+const { normalizeEmailStrict } = require("../../lib/auth-identifiers");
+const { clearAuthCookies } = require("../../lib/auth-cookies");
+const { isOpaqueTokenFormatValid, normalizeOpaqueToken } = require("../../lib/auth-secrets");
 const { logError } = require("../../lib/logger");
-const {
-  normalizeConfirmationCode,
-  isConfirmationCodeValid,
-} = require("../../lib/confirmation-code");
-
-function normalizeEmailStrict(raw) {
-  const parsed = parseMailbox(raw);
-  if (!parsed) return null;
-  if (parsed.email.length > 254) return null;
-  return parsed.email;
-}
 
 function parsePassword(raw) {
   if (typeof raw !== "string") return null;
@@ -42,12 +33,16 @@ function getPasswordResetTtlMinutes() {
   return Math.floor(raw);
 }
 
+function setNoStore(res) {
+  res.set("Cache-Control", "no-store");
+}
+
 /**
- * POST /auth/password/forgot
+ * POST /auth/forgot-password
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
-async function requestPasswordReset(req, res) {
+async function forgotPassword(req, res) {
   const ttlMinutes = getPasswordResetTtlMinutes();
 
   try {
@@ -64,23 +59,25 @@ async function requestPasswordReset(req, res) {
           userAgent: String(req.headers["user-agent"] || ""),
         });
       } catch (err) {
-        logError("auth.passwordReset.request.send.error", err, req, { email });
+        logError("auth.forgotPassword.send.error", err, req, { email });
       }
     }
 
+    setNoStore(res);
     return res.status(200).json({
       ok: true,
-      action: "password_reset_request",
+      action: "forgot_password",
       accepted: true,
       recovery: {
         ttl_minutes: ttlMinutes,
       },
     });
   } catch (err) {
-    logError("auth.passwordReset.request.error", err, req);
+    logError("auth.forgotPassword.error", err, req);
+    setNoStore(res);
     return res.status(200).json({
       ok: true,
-      action: "password_reset_request",
+      action: "forgot_password",
       accepted: true,
       recovery: {
         ttl_minutes: ttlMinutes,
@@ -90,15 +87,15 @@ async function requestPasswordReset(req, res) {
 }
 
 /**
- * POST /auth/password/reset
+ * POST /auth/reset-password
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
 async function resetPassword(req, res) {
   try {
-    const token = normalizeConfirmationCode(req.body?.token || req.query?.token || "");
+    const token = normalizeOpaqueToken(req.body?.token);
     if (!token) return res.status(400).json({ error: "invalid_params", field: "token" });
-    if (!isConfirmationCodeValid(token)) return res.status(400).json({ error: "invalid_token" });
+    if (!isOpaqueTokenFormatValid(token)) return res.status(400).json({ error: "invalid_token" });
 
     const newPassword = parsePassword(req.body?.new_password);
     if (!newPassword) {
@@ -109,22 +106,24 @@ async function resetPassword(req, res) {
       });
     }
 
-    const tokenHash32 = sha256Buffer(token);
-    const pending = await passwordResetRequestsRepository.getPendingByTokenHash(tokenHash32);
+    const pending = await passwordResetRequestsRepository.getPendingByTokenHash(
+      sha256Buffer(token)
+    );
     if (!pending) return res.status(400).json({ error: "invalid_or_expired" });
 
     const passwordHash = await hashAdminPassword(newPassword);
     const result = await passwordResetRequestsRepository.consumePendingAndResetPasswordTx({
-      tokenHash32,
+      tokenHash32: sha256Buffer(token),
       passwordHash,
     });
 
     if (!result.ok) return res.status(400).json({ error: "invalid_or_expired" });
 
-    res.set("Cache-Control", "no-store");
+    clearAuthCookies(res, config.envName || config.appEnv);
+    setNoStore(res);
     return res.status(200).json({
       ok: true,
-      action: "password_reset",
+      action: "reset_password",
       updated: true,
       reauth_required: true,
       sessions_revoked: Number(result.sessionsRevoked ?? 0),
@@ -134,12 +133,12 @@ async function resetPassword(req, res) {
     if (err && err.code === "tx_busy") {
       return res.status(503).json({ error: "temporarily_unavailable" });
     }
-    logError("auth.passwordReset.reset.error", err, req);
+    logError("auth.resetPassword.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
 module.exports = {
-  requestPasswordReset,
+  forgotPassword,
   resetPassword,
 };

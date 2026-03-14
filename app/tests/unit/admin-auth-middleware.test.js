@@ -1,14 +1,11 @@
-jest.mock("../../src/config", () => ({
-  config: {
-    adminAuthTokenBytes: 32,
+jest.mock("../../src/repositories/admin-auth-repository", () => ({
+  adminAuthRepository: {
+    touchSessionFamilyLastUsed: jest.fn().mockResolvedValue(true),
   },
 }));
 
-jest.mock("../../src/repositories/admin-auth-repository", () => ({
-  adminAuthRepository: {
-    getActiveSessionByTokenHash: jest.fn(),
-    touchSessionLastUsed: jest.fn().mockResolvedValue(true),
-  },
+jest.mock("../../src/lib/auth-session-context", () => ({
+  resolveAccessSession: jest.fn(),
 }));
 
 jest.mock("../../src/lib/logger", () => ({
@@ -16,16 +13,7 @@ jest.mock("../../src/lib/logger", () => ({
 }));
 
 const { requireAdminAuth } = require("../../src/middlewares/admin-auth");
-const { adminAuthRepository } = require("../../src/repositories/admin-auth-repository");
-
-function createReq(token) {
-  return {
-    header(name) {
-      if (name === "Authorization") return token ? `Bearer ${token}` : "";
-      return "";
-    },
-  };
-}
+const { resolveAccessSession } = require("../../src/lib/auth-session-context");
 
 function createRes() {
   return {
@@ -40,15 +28,15 @@ describe("requireAdminAuth", () => {
   });
 
   test("rejects a valid authenticated non-admin user", async () => {
-    adminAuthRepository.getActiveSessionByTokenHash.mockResolvedValue({
+    resolveAccessSession.mockResolvedValue({
       session_id: 11,
+      session_family_id: "family-123",
       user_id: 7,
       email: "user@example.com",
       is_admin: 0,
-      expires_at: "2026-03-13T12:00:00.000Z",
     });
 
-    const req = createReq("a".repeat(64));
+    const req = {};
     const res = createRes();
     const next = jest.fn();
 

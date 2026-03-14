@@ -1,5 +1,7 @@
 jest.mock("../../src/config", () => ({
   config: {
+    envName: "test",
+    appEnv: "test",
     passwordResetTtlMinutes: 15,
   },
 }));
@@ -33,7 +35,7 @@ jest.mock("../../src/lib/logger", () => ({
 }));
 
 const {
-  requestPasswordReset,
+  forgotPassword,
   resetPassword,
 } = require("../../src/controllers/auth/password-reset-controller");
 const { adminAuthRepository } = require("../../src/repositories/admin-auth-repository");
@@ -48,6 +50,8 @@ function createRes() {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
+    clearCookie: jest.fn().mockReturnThis(),
+    cookie: jest.fn().mockReturnThis(),
   };
 }
 
@@ -56,7 +60,7 @@ describe("password reset controller", () => {
     jest.clearAllMocks();
   });
 
-  test("forgot password returns a generic accepted response when user is missing", async () => {
+  test("forgot-password returns a generic accepted response when user is missing", async () => {
     adminAuthRepository.getActiveUserByEmail.mockResolvedValue(null);
 
     const req = {
@@ -66,13 +70,13 @@ describe("password reset controller", () => {
     };
     const res = createRes();
 
-    await requestPasswordReset(req, res);
+    await forgotPassword(req, res);
 
     expect(sendPasswordResetEmail).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
-      action: "password_reset_request",
+      action: "forgot_password",
       accepted: true,
       recovery: {
         ttl_minutes: 15,
@@ -80,7 +84,7 @@ describe("password reset controller", () => {
     });
   });
 
-  test("forgot password still returns accepted when email delivery fails", async () => {
+  test("forgot-password still returns accepted when email delivery fails", async () => {
     adminAuthRepository.getActiveUserByEmail.mockResolvedValue({
       id: 7,
       email: "user@example.com",
@@ -94,22 +98,22 @@ describe("password reset controller", () => {
     };
     const res = createRes();
 
-    await requestPasswordReset(req, res);
+    await forgotPassword(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test("reset password consumes token, changes password and revokes sessions", async () => {
+  test("reset-password consumes token, changes password and revokes sessions", async () => {
     passwordResetRequestsRepository.getPendingByTokenHash.mockResolvedValue({
       id: 15,
       user_id: 7,
-      email: "user@example.com",
     });
     hashAdminPassword.mockResolvedValue("new-hash");
     passwordResetRequestsRepository.consumePendingAndResetPasswordTx.mockResolvedValue({
       ok: true,
       user: {
         id: 7,
+        username: "user",
         email: "user@example.com",
       },
       sessionsRevoked: 3,
@@ -117,10 +121,9 @@ describe("password reset controller", () => {
 
     const req = {
       body: {
-        token: "123456",
+        token: "a".repeat(43),
         new_password: "StrongPassword123",
       },
-      query: {},
     };
     const res = createRes();
 
@@ -134,24 +137,24 @@ describe("password reset controller", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
-      action: "password_reset",
+      action: "reset_password",
       updated: true,
       reauth_required: true,
       sessions_revoked: 3,
       user: {
         id: 7,
+        username: "user",
         email: "user@example.com",
       },
     });
   });
 
-  test("reset password rejects invalid token format", async () => {
+  test("reset-password rejects invalid token format", async () => {
     const req = {
       body: {
-        token: "abc",
+        token: "bad",
         new_password: "StrongPassword123",
       },
-      query: {},
     };
     const res = createRes();
 

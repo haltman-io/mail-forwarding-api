@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * @fileoverview Password reset token repository.
+ * @fileoverview Email verification token repository.
  */
 
 const { query, withTx } = require("./db");
@@ -13,7 +13,7 @@ const {
 const DEFAULT_RETRY_MAX = 2;
 const RETRY_MIN_DELAY_MS = 25;
 const RETRY_MAX_DELAY_MS = 120;
-const TOKENS_TABLE = "password_reset_tokens";
+const TOKENS_TABLE = "email_verification_tokens";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,7 +47,7 @@ function assertTokenHash32(buf) {
 
 function assertTtlMinutes(value) {
   const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0 || num > 60) throw new Error("invalid_ttl_minutes");
+  if (!Number.isFinite(num) || num <= 0 || num > 24 * 60) throw new Error("invalid_ttl_minutes");
   return Math.floor(num);
 }
 
@@ -130,28 +130,7 @@ async function selectById(conn, id) {
   return rows[0] || null;
 }
 
-const passwordResetRequestsRepository = {
-  /**
-   * @param {Buffer} tokenHash32
-   * @returns {Promise<object | null>}
-   */
-  async getPendingByTokenHash(tokenHash32) {
-    assertTokenHash32(tokenHash32);
-
-    const rows = await query(
-      `SELECT id, user_id, expires_at, used_at, created_at, send_count, last_sent_at
-       FROM ${TOKENS_TABLE}
-       WHERE token_hash = ?
-         AND used_at IS NULL
-         AND expires_at > NOW(6)
-       ORDER BY id DESC
-       LIMIT 1`,
-      [tokenHash32]
-    );
-
-    return rows[0] || null;
-  },
-
+const emailVerificationTokensRepository = {
   /**
    * @param {{ userId: number, ttlMinutes: number, cooldownSeconds: number, maxSendCount: number, requestIpPacked?: Buffer | null, userAgentOrNull?: string | null }} payload
    * @returns {Promise<object>}
@@ -170,6 +149,19 @@ const passwordResetRequestsRepository = {
     const maxSends = normalizeMaxSendCount(maxSendCount);
 
     return withTxRetry(async (conn) => {
+      const userRows = await conn.query(
+        `SELECT id, email_verified_at
+         FROM users
+         WHERE id = ?
+         LIMIT 1
+         FOR UPDATE`,
+        [normalizedUserId]
+      );
+      const user = userRows[0] || null;
+      if (!user || user.email_verified_at) {
+        return { action: "not_needed", pending: null };
+      }
+
       await conn.query(
         `UPDATE ${TOKENS_TABLE}
          SET used_at = NOW(6)
@@ -288,13 +280,32 @@ const passwordResetRequestsRepository = {
   },
 
   /**
-   * @param {{ tokenHash32: Buffer, passwordHash: string }} payload
-   * @returns {Promise<{ ok: boolean, reason?: string, user?: object, sessionsRevoked?: number }>}
+   * @param {Buffer} tokenHash32
+   * @returns {Promise<object | null>}
    */
-  async consumePendingAndResetPasswordTx({ tokenHash32, passwordHash }) {
+  async getPendingByTokenHash(tokenHash32) {
     assertTokenHash32(tokenHash32);
-    const normalizedPasswordHash = String(passwordHash || "").trim();
-    if (!normalizedPasswordHash) throw new Error("invalid_password_hash");
+
+    const rows = await query(
+      `SELECT id, user_id, expires_at, used_at, created_at, send_count, last_sent_at
+       FROM ${TOKENS_TABLE}
+       WHERE token_hash = ?
+         AND used_at IS NULL
+         AND expires_at > NOW(6)
+       ORDER BY id DESC
+       LIMIT 1`,
+      [tokenHash32]
+    );
+
+    return rows[0] || null;
+  },
+
+  /**
+   * @param {{ tokenHash32: Buffer }} payload
+   * @returns {Promise<{ ok: boolean, reason?: string, user?: object }>}
+   */
+  async consumePendingTokenTx({ tokenHash32 }) {
+    assertTokenHash32(tokenHash32);
 
     return withTxRetry(async (conn) => {
       const tokenRows = await conn.query(
@@ -307,14 +318,13 @@ const passwordResetRequestsRepository = {
         [tokenHash32]
       );
       const tokenRow = tokenRows[0] || null;
-
       if (!tokenRow) return { ok: false, reason: "invalid_or_expired" };
       if (tokenRow.used_at || new Date(tokenRow.expires_at).getTime() <= Date.now()) {
         return { ok: false, reason: "invalid_or_expired" };
       }
 
       const userRows = await conn.query(
-        `SELECT id, username, email, is_active
+        `SELECT id, username, email, email_verified_at, is_active
          FROM users
          WHERE id = ?
          LIMIT 1
@@ -322,33 +332,24 @@ const passwordResetRequestsRepository = {
         [tokenRow.user_id]
       );
       const user = userRows[0] || null;
-      if (!user || Number(user.is_active || 0) !== 1) {
+      if (!user || Number(user.is_active || 0) !== 1 || user.email_verified_at) {
         await conn.query(
           `UPDATE ${TOKENS_TABLE}
            SET used_at = NOW(6)
-           WHERE id = ?
+           WHERE user_id = ?
              AND used_at IS NULL`,
-          [tokenRow.id]
+          [tokenRow.user_id]
         );
         return { ok: false, reason: "invalid_or_expired" };
       }
 
       await conn.query(
         `UPDATE users
-         SET password_hash = ?,
-             password_changed_at = NOW(6),
+         SET email_verified_at = NOW(6),
              updated_at = NOW(6)
          WHERE id = ?
+           AND email_verified_at IS NULL
          LIMIT 1`,
-        [normalizedPasswordHash, user.id]
-      );
-
-      const revokeResult = await conn.query(
-        `UPDATE auth_sessions
-         SET status = 'revoked',
-             revoked_at = COALESCE(revoked_at, NOW(6))
-         WHERE user_id = ?
-           AND status IN ('active', 'rotated')`,
         [user.id]
       );
 
@@ -367,13 +368,12 @@ const passwordResetRequestsRepository = {
           username: user.username,
           email: user.email,
         },
-        sessionsRevoked: Number(revokeResult?.affectedRows ?? 0),
       };
     });
   },
 };
 
 module.exports = {
-  passwordResetRequestsRepository,
+  emailVerificationTokensRepository,
   sha256Buffer,
 };

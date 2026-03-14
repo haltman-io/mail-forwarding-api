@@ -33,7 +33,7 @@ app.disable("x-powered-by");
 app.use("/", router);
 
 app.use((req, res) => {
-  res.redirect("https://github.com/haltman-io");
+  res.status(404).json({ error: "not_found" });
 });
 
 app.use(errorHandler);

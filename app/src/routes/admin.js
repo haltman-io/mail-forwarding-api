@@ -9,6 +9,9 @@ const { rateLimit } = require("../middlewares/rate-limit");
 const { getAdminMe } = require("../controllers/admin/login-controller");
 const { requireAdminAuth } = require("../middlewares/admin-auth");
 const {
+  requireCsrfForAuthenticatedMutation,
+} = require("../middlewares/csrf-protection");
+const {
   listAdminDomains,
   getAdminDomain,
   createAdminDomain,
@@ -55,7 +58,7 @@ const {
 const adminRouter = express.Router();
 
 // Every route declared after this line will require admin authentication.
-adminRouter.use(rateLimit.globalLimiter, requireAdminAuth);
+adminRouter.use(rateLimit.globalLimiter, requireAdminAuth, requireCsrfForAuthenticatedMutation);
 
 // auth/session
 adminRouter.get("/me", getAdminMe);

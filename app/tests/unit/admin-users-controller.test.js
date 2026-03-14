@@ -7,6 +7,7 @@ jest.mock("../../src/config", () => ({
 jest.mock("../../src/repositories/admin-auth-repository", () => ({
   adminAuthRepository: {
     getUserByEmail: jest.fn(),
+    getUserByUsername: jest.fn(),
     createUser: jest.fn(),
     getUserById: jest.fn(),
     updateUserById: jest.fn(),
@@ -58,11 +59,14 @@ describe("admin users controller notifications", () => {
 
   test("create sends welcome email to the new admin", async () => {
     adminAuthRepository.getUserByEmail.mockResolvedValue(null);
+    adminAuthRepository.getUserByUsername.mockResolvedValue(null);
     hashAdminPassword.mockResolvedValue("hash");
     adminAuthRepository.createUser.mockResolvedValue({ insertId: 7 });
     adminAuthRepository.getUserById.mockResolvedValue({
       id: 7,
+      username: "new-admin",
       email: "new-admin@example.com",
+      email_verified_at: "2026-02-23T18:00:00.000Z",
       is_active: 1,
       is_admin: 1,
       created_at: "2026-02-23T18:00:00.000Z",
@@ -72,6 +76,7 @@ describe("admin users controller notifications", () => {
 
     const req = {
       body: {
+        username: "new-admin",
         email: "new-admin@example.com",
         password: "StrongPassword123",
         is_active: 1,
@@ -105,7 +110,9 @@ describe("admin users controller notifications", () => {
     adminAuthRepository.getUserById
       .mockResolvedValueOnce({
         id: 7,
+        username: "old-admin",
         email: "old-admin@example.com",
+        email_verified_at: "2026-02-23T18:00:00.000Z",
         is_active: 1,
         is_admin: 1,
         created_at: "2026-02-23T18:00:00.000Z",
@@ -114,7 +121,9 @@ describe("admin users controller notifications", () => {
       })
       .mockResolvedValueOnce({
         id: 7,
+        username: "updated-admin",
         email: "updated-admin@example.com",
+        email_verified_at: "2026-02-23T18:00:00.000Z",
         is_active: 1,
         is_admin: 1,
         created_at: "2026-02-23T18:00:00.000Z",
@@ -122,11 +131,15 @@ describe("admin users controller notifications", () => {
         last_login_at: null,
       });
     adminAuthRepository.getUserByEmail.mockResolvedValue(null);
+    adminAuthRepository.getUserByUsername.mockResolvedValue(null);
     adminAuthRepository.updateUserById.mockResolvedValue(true);
 
     const req = {
       params: { id: "7" },
-      body: { email: "updated-admin@example.com" },
+      body: {
+        username: "updated-admin",
+        email: "updated-admin@example.com",
+      },
       admin_auth: {
         email: "creator@example.com",
         user_id: 1,
@@ -147,11 +160,14 @@ describe("admin users controller notifications", () => {
 
   test("create common user skips admin welcome email", async () => {
     adminAuthRepository.getUserByEmail.mockResolvedValue(null);
+    adminAuthRepository.getUserByUsername.mockResolvedValue(null);
     hashAdminPassword.mockResolvedValue("hash");
     adminAuthRepository.createUser.mockResolvedValue({ insertId: 9 });
     adminAuthRepository.getUserById.mockResolvedValue({
       id: 9,
+      username: "new-user",
       email: "new-user@example.com",
+      email_verified_at: "2026-02-23T18:00:00.000Z",
       is_active: 1,
       is_admin: 0,
       created_at: "2026-02-23T18:00:00.000Z",
@@ -161,6 +177,7 @@ describe("admin users controller notifications", () => {
 
     const req = {
       body: {
+        username: "new-user",
         email: "new-user@example.com",
         password: "StrongPassword123",
         is_active: 1,
@@ -183,4 +200,3 @@ describe("admin users controller notifications", () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 });
-

@@ -1,44 +1,53 @@
 "use strict";
 
 /**
- * @fileoverview Unified authentication controller for users and admins.
+ * @fileoverview Browser auth controller with JWT access cookies and refresh sessions.
  */
 
-const crypto = require("crypto");
 const { config } = require("../../config");
 const { adminAuthRepository } = require("../../repositories/admin-auth-repository");
 const {
-  authRegisterRequestsRepository,
-} = require("../../repositories/auth-register-requests-repository");
+  emailVerificationTokensRepository,
+} = require("../../repositories/email-verification-tokens-repository");
 const {
   hashAdminPassword,
   verifyAdminPassword,
   MIN_PASSWORD_LEN,
   MAX_PASSWORD_LEN,
 } = require("../../services/admin-password-service");
-const { sendAuthRegisterEmail } = require("../../services/auth-register-email-service");
+const {
+  sendEmailVerificationEmail,
+} = require("../../services/email-verification-email-service");
 const { sendAdminLoginNotificationEmail } = require("../../services/admin-login-email-service");
-const { parseMailbox } = require("../../lib/mailbox-validation");
 const { packIp16 } = require("../../lib/ip-pack");
 const { logError } = require("../../lib/logger");
 const {
-  normalizeConfirmationCode,
-  isConfirmationCodeValid,
-} = require("../../lib/confirmation-code");
+  normalizeEmailStrict,
+  normalizeUsername,
+  parseIdentifier,
+} = require("../../lib/auth-identifiers");
+const {
+  buildCookieOptions,
+  clearAuthCookies,
+  setAccessCookie,
+  setRefreshCookie,
+} = require("../../lib/auth-cookies");
+const { mintAccessJwt } = require("../../lib/access-jwt");
+const { deriveCsrfToken, readCsrfHeader, isCsrfTokenValid } = require("../../lib/csrf");
+const {
+  createOpaqueToken,
+  isOpaqueTokenFormatValid,
+  normalizeOpaqueToken,
+  sha256Buffer,
+} = require("../../lib/auth-secrets");
+const {
+  getRefreshCookie,
+  resolveAccessOrRefreshSession,
+  resolveRefreshSession,
+} = require("../../lib/auth-session-context");
 
-const FALLBACK_DUMMY_ADMIN_PASSWORD_HASH =
+const FALLBACK_DUMMY_PASSWORD_HASH =
   "$argon2id$v=19$m=131072,t=4,p=1$L/mffIBj9C0gzyzOnmkUHQ$FgGLHMi1bdENEMchXbgdisn0+oOmolSiP//2841TDBM";
-
-function sha256Buffer(value) {
-  return crypto.createHash("sha256").update(String(value), "utf8").digest();
-}
-
-function normalizeEmailStrict(raw) {
-  const parsed = parseMailbox(raw);
-  if (!parsed) return null;
-  if (parsed.email.length > 254) return null;
-  return parsed.email;
-}
 
 function parsePassword(raw) {
   if (typeof raw !== "string") return null;
@@ -46,21 +55,21 @@ function parsePassword(raw) {
   return raw;
 }
 
-function getTokenBytes() {
-  const raw = Number(config.adminAuthTokenBytes ?? 32);
-  if (!Number.isFinite(raw) || raw < 16 || raw > 64) return 32;
+function getRefreshTtlDays() {
+  const raw = Number(config.authRefreshTtlDays ?? 30);
+  if (!Number.isFinite(raw) || raw <= 0 || raw > 365) return 30;
   return Math.floor(raw);
 }
 
-function getSessionTtlMinutes() {
-  const raw = Number(config.adminAuthSessionTtlMinutes ?? 12 * 60);
-  if (!Number.isFinite(raw) || raw < 5 || raw > 7 * 24 * 60) return 12 * 60;
+function getMaxActiveSessionFamilies() {
+  const raw = Number(config.authMaxActiveSessionFamilies ?? 5);
+  if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 5;
   return Math.floor(raw);
 }
 
 function getDummyHash() {
   const configured = String(config.adminAuthDummyPasswordHash || "").trim();
-  return configured || FALLBACK_DUMMY_ADMIN_PASSWORD_HASH;
+  return configured || FALLBACK_DUMMY_PASSWORD_HASH;
 }
 
 function normalizePasswordForSlowVerify(raw) {
@@ -75,7 +84,7 @@ async function consumeSlowVerify(rawPassword) {
   try {
     await verifyAdminPassword(getDummyHash(), password);
   } catch (_) {
-    // Intentionally ignore: this call only equalizes cost for invalid attempts.
+    // Intentionally ignored to normalize login failure cost.
   }
 }
 
@@ -83,7 +92,9 @@ function toPublicAuthUser(row) {
   if (!row) return null;
   return {
     id: row.id,
+    username: row.username,
     email: row.email,
+    email_verified_at: row.email_verified_at || null,
     is_active: Number(row.is_active || 0),
     is_admin: Number(row.is_admin || 0) === 1,
     created_at: row.created_at || null,
@@ -92,15 +103,76 @@ function toPublicAuthUser(row) {
   };
 }
 
+function setNoStore(res) {
+  res.set("Cache-Control", "no-store");
+}
+
+function setAuthCookies(res, { accessToken, refreshToken, refreshExpiresAt }) {
+  const envName = config.envName || config.appEnv;
+  const accessCookieOptions = buildCookieOptions({
+    maxAgeMs: Number(config.jwtAccessTtlSeconds ?? 600) * 1000,
+    envName,
+  });
+  const refreshMaxAgeMs = Math.max(
+    0,
+    new Date(refreshExpiresAt).getTime() - Date.now()
+  );
+  const refreshCookieOptions = buildCookieOptions({
+    maxAgeMs: refreshMaxAgeMs,
+    envName,
+  });
+
+  setAccessCookie(res, accessToken, accessCookieOptions);
+  setRefreshCookie(res, refreshToken, refreshCookieOptions);
+}
+
+function clearCookies(res) {
+  clearAuthCookies(res, config.envName || config.appEnv);
+}
+
+function genericSignUpResponse(res) {
+  setNoStore(res);
+  return res.status(202).json({
+    ok: true,
+    action: "sign_up",
+    accepted: true,
+  });
+}
+
+function genericForgotPasswordResponse(res) {
+  setNoStore(res);
+  return res.status(200).json({
+    ok: true,
+    action: "forgot_password",
+    accepted: true,
+  });
+}
+
+async function trySendVerificationEmail({ userId, email, req }) {
+  try {
+    await sendEmailVerificationEmail({
+      userId,
+      email,
+      requestIpText: req.ip,
+      userAgent: String(req.headers["user-agent"] || ""),
+    });
+  } catch (err) {
+    logError("auth.signUp.sendVerification.error", err, req, { user_id: userId, email });
+  }
+}
+
 /**
- * POST /auth/register
+ * POST /auth/sign-up
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
-async function registerUser(req, res) {
+async function signUp(req, res) {
   try {
     const email = normalizeEmailStrict(req.body?.email);
     if (!email) return res.status(400).json({ error: "invalid_params", field: "email" });
+
+    const username = normalizeUsername(req.body?.username);
+    if (!username) return res.status(400).json({ error: "invalid_params", field: "username" });
 
     const password = parsePassword(req.body?.password);
     if (!password) {
@@ -111,95 +183,94 @@ async function registerUser(req, res) {
       });
     }
 
-    const existing = await adminAuthRepository.getUserByEmail(email);
-    if (existing) return res.status(409).json({ error: "user_taken", email });
+    const [existingByEmail, existingByUsername] = await Promise.all([
+      adminAuthRepository.getUserByEmail(email).catch(() => null),
+      adminAuthRepository.getUserByUsername(username).catch(() => null),
+    ]);
+
+    if (existingByEmail) {
+      if (!existingByEmail.email_verified_at) {
+        await trySendVerificationEmail({ userId: existingByEmail.id, email: existingByEmail.email, req });
+      }
+      return genericSignUpResponse(res);
+    }
+
+    if (existingByUsername) {
+      return genericSignUpResponse(res);
+    }
 
     const passwordHash = await hashAdminPassword(password);
-    const delivery = await sendAuthRegisterEmail({
+    const created = await adminAuthRepository.createUser({
       email,
+      username,
       passwordHash,
-      requestIpText: req.ip,
-      userAgent: String(req.headers["user-agent"] || ""),
-      requestOrigin: req.get("origin") || "",
-      requestReferer: req.get("referer") || req.get("referrer") || "",
+      isActive: 1,
+      isAdmin: 0,
+      emailVerifiedAt: null,
     });
 
-    res.set("Cache-Control", "no-store");
-    return res.status(202).json({
-      ok: true,
-      action: "register",
-      accepted: true,
-      verification: {
-        sent: Boolean(delivery.sent),
-        ttl_minutes: Number(delivery.ttl_minutes || config.authRegisterTtlMinutes || 15),
-      },
-    });
-  } catch (err) {
-    if (err && (err.code === "ER_DUP_ENTRY" || err.code === "user_taken")) {
-      return res.status(409).json({ error: "user_taken" });
+    if (created.insertId) {
+      await trySendVerificationEmail({ userId: created.insertId, email, req });
     }
-    logError("auth.register.error", err, req);
+
+    return genericSignUpResponse(res);
+  } catch (err) {
+    if (err && err.code === "ER_DUP_ENTRY") {
+      return genericSignUpResponse(res);
+    }
+    logError("auth.signUp.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
 /**
- * GET /auth/register/confirm?token=...
+ * POST /auth/verify-email
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
-async function confirmRegistration(req, res) {
+async function verifyEmail(req, res) {
   try {
-    const token = normalizeConfirmationCode(req.query?.token || req.body?.token || "");
-    if (!isConfirmationCodeValid(token)) {
-      return res.status(400).json({ error: "invalid_token" });
-    }
+    const token = normalizeOpaqueToken(req.body?.token);
+    if (!token) return res.status(400).json({ error: "invalid_params", field: "token" });
+    if (!isOpaqueTokenFormatValid(token)) return res.status(400).json({ error: "invalid_token" });
 
-    const result = await authRegisterRequestsRepository.consumePendingAndCreateUserTx({
+    const result = await emailVerificationTokensRepository.consumePendingTokenTx({
       tokenHash32: sha256Buffer(token),
     });
+    if (!result.ok) return res.status(400).json({ error: "invalid_or_expired" });
 
-    if (!result.ok) {
-      if (result.reason === "user_taken") {
-        return res.status(409).json({ error: "user_taken", email: result.email || undefined });
-      }
-      return res.status(400).json({ error: "invalid_or_expired" });
-    }
-
-    res.set("Cache-Control", "no-store");
-    return res.status(201).json({
+    setNoStore(res);
+    return res.status(200).json({
       ok: true,
-      action: "register_confirm",
-      confirmed: true,
-      created: true,
-      login_required: true,
-      user: toPublicAuthUser(result.user),
+      action: "verify_email",
+      verified: true,
+      user: result.user || null,
     });
   } catch (err) {
-    logError("auth.register.confirm.error", err, req);
+    if (err && err.code === "tx_busy") {
+      return res.status(503).json({ error: "temporarily_unavailable" });
+    }
+    logError("auth.verifyEmail.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
 /**
- * POST /auth/login
+ * POST /auth/sign-in
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
-async function login(req, res) {
+async function signIn(req, res) {
   try {
-    const emailRaw = req.body?.email;
-    const passwordRaw = req.body?.password;
-
-    const email = normalizeEmailStrict(emailRaw);
-    if (!email) {
-      await consumeSlowVerify(passwordRaw);
-      return res.status(400).json({ error: "invalid_params", field: "email" });
+    const identifier = parseIdentifier(req.body?.identifier);
+    if (!identifier) {
+      await consumeSlowVerify(req.body?.password);
+      return res.status(400).json({ error: "invalid_params", field: "identifier" });
     }
 
-    const password = parsePassword(passwordRaw);
+    const password = parsePassword(req.body?.password);
     if (!password) {
-      await consumeSlowVerify(passwordRaw);
+      await consumeSlowVerify(req.body?.password);
       return res.status(400).json({
         error: "invalid_params",
         field: "password",
@@ -207,7 +278,7 @@ async function login(req, res) {
       });
     }
 
-    const user = await adminAuthRepository.getActiveUserByEmail(email);
+    const user = await adminAuthRepository.getActiveUserByIdentifier(identifier);
     const passwordHash = String(user?.password_hash || getDummyHash());
     let isPasswordValid = false;
 
@@ -217,25 +288,34 @@ async function login(req, res) {
       isPasswordValid = false;
     }
 
-    if (!user || !isPasswordValid) {
-      return res.status(401).json({ error: "invalid_credentials" });
+    if (!user || !isPasswordValid || !user.email_verified_at) {
+      return res.status(401).json({ error: "auth_failed" });
     }
 
-    const token = crypto.randomBytes(getTokenBytes()).toString("hex");
-    const tokenHash32 = sha256Buffer(token);
-    const userAgent = String(req.headers["user-agent"] || "").slice(0, 255);
+    const refreshToken = createOpaqueToken();
     const requestIpPacked = req.ip ? packIp16(req.ip) : null;
-    const ttlMinutes = getSessionTtlMinutes();
-
-    const session = await adminAuthRepository.createSession({
+    const userAgent = String(req.headers["user-agent"] || "").slice(0, 255);
+    const session = await adminAuthRepository.createSessionFamilyTx({
       userId: user.id,
-      tokenHash32,
-      ttlMinutes,
+      refreshTokenHash32: sha256Buffer(refreshToken),
+      refreshTtlDays: getRefreshTtlDays(),
       requestIpPacked,
       userAgentOrNull: userAgent || null,
+      maxActiveFamilies: getMaxActiveSessionFamilies(),
     });
 
-    if (!session.ok) throw new Error("auth_session_create_failed");
+    if (!session.ok || !session.sessionFamilyId) throw new Error("auth_session_create_failed");
+
+    const access = mintAccessJwt({
+      userId: user.id,
+      sessionFamilyId: session.sessionFamilyId,
+    });
+
+    setAuthCookies(res, {
+      accessToken: access.token,
+      refreshToken,
+      refreshExpiresAt: session.refreshExpiresAt,
+    });
 
     await adminAuthRepository.updateLastLoginAtById(user.id);
 
@@ -248,65 +328,224 @@ async function login(req, res) {
           occurredAt: new Date(),
         });
       } catch (notifyErr) {
-        logError("auth.login.notify.error", notifyErr, req, { admin_email: user.email });
+        logError("auth.signIn.notify.error", notifyErr, req, { admin_email: user.email });
       }
     }
 
     const freshUser = await adminAuthRepository.getUserById(user.id);
 
-    res.set("Cache-Control", "no-store");
+    setNoStore(res);
     return res.status(200).json({
       ok: true,
-      action: "login",
+      action: "sign_in",
+      authenticated: true,
       user: toPublicAuthUser(freshUser || user),
-      auth: {
-        token,
-        token_type: "bearer",
-        expires_at: session.expiresAt,
+      session: {
+        session_family_id: session.sessionFamilyId,
+        access_expires_at: new Date(Number(access.claims.exp) * 1000).toISOString(),
+        refresh_expires_at: session.refreshExpiresAt || null,
       },
     });
   } catch (err) {
-    logError("auth.login.error", err, req);
+    logError("auth.signIn.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
 /**
- * GET /auth/me
+ * GET /auth/session
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
-async function getMe(req, res) {
+async function getSession(req, res) {
   try {
     const userId = Number(req.auth?.user_id || 0);
     if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(401).json({ error: "invalid_or_expired_auth_token" });
+      return res.status(401).json({ error: "invalid_or_expired_session" });
     }
 
     const user = await adminAuthRepository.getUserById(userId);
     if (!user || Number(user.is_active || 0) !== 1) {
-      return res.status(401).json({ error: "invalid_or_expired_auth_token" });
+      return res.status(401).json({ error: "invalid_or_expired_session" });
     }
 
+    setNoStore(res);
     return res.status(200).json({
       ok: true,
       authenticated: true,
       user: toPublicAuthUser(user),
-      auth: {
-        session_id: req.auth?.session_id || null,
-        token_type: "bearer",
-        expires_at: req.auth?.expires_at || null,
+      session: {
+        session_family_id: req.auth?.session_family_id || null,
+        access_expires_at: req.auth?.access_expires_at || null,
+        refresh_expires_at: req.auth?.refresh_expires_at || null,
       },
     });
   } catch (err) {
-    logError("auth.me.error", err, req);
+    logError("auth.session.error", err, req);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+/**
+ * GET /auth/csrf
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function getCsrf(req, res) {
+  try {
+    const auth = await resolveAccessOrRefreshSession(req);
+    if (!auth) return res.status(401).json({ error: "invalid_or_expired_session" });
+
+    setNoStore(res);
+    return res.status(200).json({
+      ok: true,
+      csrf_token: deriveCsrfToken(auth.session_family_id),
+    });
+  } catch (err) {
+    logError("auth.csrf.error", err, req);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+/**
+ * POST /auth/refresh
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function refreshSession(req, res) {
+  try {
+    const refreshContext = await resolveRefreshSession(req);
+    const refreshToken = normalizeOpaqueToken(getRefreshCookie(req));
+
+    if (!refreshContext || !refreshToken) {
+      clearCookies(res);
+      return res.status(401).json({ error: "invalid_or_expired_session" });
+    }
+
+    const csrfToken = readCsrfHeader(req);
+    if (!csrfToken) return res.status(403).json({ error: "csrf_required" });
+    if (!isCsrfTokenValid(refreshContext.session_family_id, csrfToken)) {
+      return res.status(403).json({ error: "invalid_csrf_token" });
+    }
+
+    const nextRefreshToken = createOpaqueToken();
+    const requestIpPacked = req.ip ? packIp16(req.ip) : null;
+    const userAgent = String(req.headers["user-agent"] || "").slice(0, 255);
+    const rotated = await adminAuthRepository.rotateRefreshSessionTx({
+      presentedRefreshTokenHash32: sha256Buffer(refreshToken),
+      nextRefreshTokenHash32: sha256Buffer(nextRefreshToken),
+      requestIpPacked,
+      userAgentOrNull: userAgent || null,
+    });
+
+    if (!rotated.ok) {
+      clearCookies(res);
+      return res.status(401).json({ error: "invalid_or_expired_session" });
+    }
+
+    const access = mintAccessJwt({
+      userId: rotated.userId,
+      sessionFamilyId: rotated.sessionFamilyId,
+    });
+
+    setAuthCookies(res, {
+      accessToken: access.token,
+      refreshToken: nextRefreshToken,
+      refreshExpiresAt: rotated.refreshExpiresAt,
+    });
+
+    setNoStore(res);
+    return res.status(200).json({
+      ok: true,
+      action: "refresh",
+      refreshed: true,
+      session: {
+        session_family_id: rotated.sessionFamilyId,
+        access_expires_at: new Date(Number(access.claims.exp) * 1000).toISOString(),
+        refresh_expires_at: rotated.refreshExpiresAt || null,
+      },
+    });
+  } catch (err) {
+    if (err && err.code === "tx_busy") {
+      return res.status(503).json({ error: "temporarily_unavailable" });
+    }
+    logError("auth.refresh.error", err, req);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+/**
+ * POST /auth/sign-out
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function signOut(req, res) {
+  try {
+    const auth = await resolveAccessOrRefreshSession(req);
+    if (auth) {
+      const csrfToken = readCsrfHeader(req);
+      if (!csrfToken) return res.status(403).json({ error: "csrf_required" });
+      if (!isCsrfTokenValid(auth.session_family_id, csrfToken)) {
+        return res.status(403).json({ error: "invalid_csrf_token" });
+      }
+
+      await adminAuthRepository.revokeSessionFamilyById(auth.session_family_id);
+    }
+
+    clearCookies(res);
+    setNoStore(res);
+    return res.status(200).json({
+      ok: true,
+      action: "sign_out",
+      signed_out: true,
+    });
+  } catch (err) {
+    logError("auth.signOut.error", err, req);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+/**
+ * POST /auth/sign-out-all
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function signOutAll(req, res) {
+  try {
+    const auth = await resolveAccessOrRefreshSession(req);
+    let revoked = 0;
+
+    if (auth) {
+      const csrfToken = readCsrfHeader(req);
+      if (!csrfToken) return res.status(403).json({ error: "csrf_required" });
+      if (!isCsrfTokenValid(auth.session_family_id, csrfToken)) {
+        return res.status(403).json({ error: "invalid_csrf_token" });
+      }
+
+      revoked = await adminAuthRepository.revokeSessionsByUserId(auth.user_id);
+    }
+
+    clearCookies(res);
+    setNoStore(res);
+    return res.status(200).json({
+      ok: true,
+      action: "sign_out_all",
+      signed_out_all: true,
+      sessions_revoked: revoked,
+    });
+  } catch (err) {
+    logError("auth.signOutAll.error", err, req);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
 module.exports = {
-  registerUser,
-  confirmRegistration,
-  login,
-  getMe,
+  signUp,
+  verifyEmail,
+  signIn,
+  getSession,
+  getCsrf,
+  refreshSession,
+  signOut,
+  signOutAll,
 };

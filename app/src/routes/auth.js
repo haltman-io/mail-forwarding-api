@@ -8,61 +8,68 @@ const express = require("express");
 const { rateLimit } = require("../middlewares/rate-limit");
 const { requireAuth } = require("../middlewares/auth");
 const {
-  registerUser,
-  confirmRegistration,
-  login,
-  getMe,
+  signUp,
+  verifyEmail,
+  signIn,
+  getSession,
+  getCsrf,
+  refreshSession,
+  signOut,
+  signOutAll,
 } = require("../controllers/auth/auth-controller");
 const {
-  requestPasswordReset,
+  forgotPassword,
   resetPassword,
 } = require("../controllers/auth/password-reset-controller");
 
 const authRouter = express.Router();
 
 authRouter.post(
-  "/register",
+  "/sign-up",
   rateLimit.globalLimiter,
   rateLimit.authRegisterByIp,
   rateLimit.authRegisterByEmail,
-  registerUser
-);
-
-authRouter.get(
-  "/register/confirm",
-  rateLimit.globalLimiter,
-  rateLimit.authRegisterConfirmByIp,
-  rateLimit.authRegisterConfirmByToken,
-  confirmRegistration
+  signUp
 );
 
 authRouter.post(
-  "/login",
+  "/verify-email",
+  rateLimit.globalLimiter,
+  rateLimit.authRegisterConfirmByIp,
+  rateLimit.authRegisterConfirmByToken,
+  verifyEmail
+);
+
+authRouter.post(
+  "/sign-in",
   rateLimit.globalLimiter,
   rateLimit.authLoginFailByIp,
   rateLimit.authLoginFailByEmail,
   rateLimit.authLoginFailHardByEmailIp,
   rateLimit.authLoginFailFastByEmailIp,
-  login
+  signIn
 );
 
 authRouter.post(
-  "/password/forgot",
+  "/forgot-password",
   rateLimit.globalLimiter,
   rateLimit.authPasswordResetRequestByIp,
   rateLimit.authPasswordResetRequestByEmail,
-  requestPasswordReset
+  forgotPassword
 );
 
 authRouter.post(
-  "/password/reset",
+  "/reset-password",
   rateLimit.globalLimiter,
   rateLimit.authPasswordResetConfirmByIp,
   rateLimit.authPasswordResetConfirmByToken,
   resetPassword
 );
 
-authRouter.use(rateLimit.globalLimiter, requireAuth);
-authRouter.get("/me", getMe);
+authRouter.get("/csrf", rateLimit.globalLimiter, getCsrf);
+authRouter.post("/refresh", rateLimit.globalLimiter, refreshSession);
+authRouter.post("/sign-out", rateLimit.globalLimiter, signOut);
+authRouter.post("/sign-out-all", rateLimit.globalLimiter, signOutAll);
+authRouter.get("/session", rateLimit.globalLimiter, requireAuth, getSession);
 
 module.exports = { authRouter };

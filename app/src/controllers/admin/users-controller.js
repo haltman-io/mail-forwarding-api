@@ -17,6 +17,7 @@ const {
   sendAdminUserWelcomeEmail,
 } = require("../../services/admin-user-change-email-service");
 const { parseMailbox, normalizeLowerTrim } = require("../../lib/mailbox-validation");
+const { normalizeUsername } = require("../../lib/auth-identifiers");
 const { logError } = require("../../lib/logger");
 const { parseId, parsePagination, parseOptionalBoolAsInt } = require("./helpers");
 
@@ -33,6 +34,10 @@ function parsePassword(raw) {
   return raw;
 }
 
+function parseUsernameStrict(raw) {
+  return normalizeUsername(raw);
+}
+
 function parseSearchTerm(raw) {
   const value = normalizeLowerTrim(raw);
   return value || null;
@@ -46,7 +51,9 @@ function toPublicUser(row) {
   if (!row) return null;
   return {
     id: row.id,
+    username: row.username,
     email: row.email,
+    email_verified_at: row.email_verified_at || null,
     is_active: Number(row.is_active || 0),
     is_admin: isAdminUser(row),
     created_at: row.created_at || null,
@@ -175,6 +182,9 @@ async function getAdminUser(req, res) {
  */
 async function createAdminUser(req, res) {
   try {
+    const username = parseUsernameStrict(req.body?.username);
+    if (!username) return res.status(400).json({ error: "invalid_params", field: "username" });
+
     const email = parseEmailStrict(req.body?.email);
     if (!email) return res.status(400).json({ error: "invalid_params", field: "email" });
 
@@ -194,16 +204,24 @@ async function createAdminUser(req, res) {
     if (!isAdminParsed.ok) return res.status(400).json({ error: "invalid_params", field: "is_admin" });
     const isAdmin = isAdminParsed.value === undefined ? 1 : isAdminParsed.value;
 
-    const existing = await adminAuthRepository.getUserByEmail(email);
-    if (existing) return res.status(409).json({ error: "admin_user_taken", email });
+    const [existingByEmail, existingByUsername] = await Promise.all([
+      adminAuthRepository.getUserByEmail(email),
+      adminAuthRepository.getUserByUsername(username),
+    ]);
+    if (existingByEmail) return res.status(409).json({ error: "admin_user_taken", field: "email", email });
+    if (existingByUsername) {
+      return res.status(409).json({ error: "admin_user_taken", field: "username", username });
+    }
 
     const passwordHash = await hashAdminPassword(password);
 
     const created = await adminAuthRepository.createUser({
+      username,
       email,
       passwordHash,
       isActive,
       isAdmin,
+      emailVerifiedAt: new Date(),
     });
 
     const row = await adminAuthRepository.getUserById(created.insertId);
@@ -279,6 +297,21 @@ async function updateAdminUser(req, res) {
         }
         patch.isActive = activeParsed.value;
         changes.push("is_active");
+      }
+    }
+
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, "username")) {
+      const username = parseUsernameStrict(req.body?.username);
+      if (!username) return res.status(400).json({ error: "invalid_params", field: "username" });
+
+      const conflict = await adminAuthRepository.getUserByUsername(username);
+      if (conflict && Number(conflict.id) !== id) {
+        return res.status(409).json({ error: "admin_user_taken", username });
+      }
+
+      if (username !== String(current.username || "").trim().toLowerCase()) {
+        patch.username = username;
+        changes.push("username");
       }
     }
 
@@ -421,7 +454,7 @@ async function updateOwnAdminPassword(req, res) {
   try {
     const actorUserId = Number(req.admin_auth?.user_id || 0);
     if (!Number.isInteger(actorUserId) || actorUserId <= 0) {
-      return res.status(401).json({ error: "invalid_or_expired_admin_token" });
+      return res.status(401).json({ error: "invalid_or_expired_session" });
     }
 
     const currentPassword = parsePassword(req.body?.current_password);
@@ -448,7 +481,7 @@ async function updateOwnAdminPassword(req, res) {
 
     const currentUser = await adminAuthRepository.getUserById(actorUserId);
     if (!currentUser || Number(currentUser.is_active || 0) !== 1) {
-      return res.status(401).json({ error: "invalid_or_expired_admin_token" });
+      return res.status(401).json({ error: "invalid_or_expired_session" });
     }
 
     const isValid = await verifyAdminPassword(String(currentUser.password_hash || ""), currentPassword);

@@ -49,7 +49,6 @@ describe("password-reset-email-service", () => {
     expect(packIp16).toHaveBeenCalledWith("203.0.113.7");
     expect(upsertPendingByUserIdTx).toHaveBeenCalledWith({
       userId: 7,
-      email: "user@example.com",
       ttlMinutes: 15,
       cooldownSeconds: 60,
       maxSendCount: 3,
@@ -66,7 +65,7 @@ describe("password-reset-email-service", () => {
     expect(mail.subject).toBe("654321 is your verification code | localhost / Password reset");
     expect(mail.text).toContain("YOUR VERIFICATION CODE IS: 654321");
     expect(mail.text).toContain("PASSWORD RESET REQUEST DETECTED.");
-    expect(mail.text).toContain("POST /auth/password/reset");
+    expect(mail.text).toContain("POST /auth/reset-password");
     expect(mail.html).toContain("Your password reset code is:");
     expect(mail.html).toContain("single-use");
 

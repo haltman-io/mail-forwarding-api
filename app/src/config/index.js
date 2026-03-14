@@ -102,10 +102,21 @@ const dotenv = require("dotenv");
  * @property {number} authRegisterResendCooldownSeconds
  * @property {number} authRegisterMaxSends
  * @property {string} authRegisterEmailSubject
+ * @property {string} authVerifyEmailEndpoint
  * @property {number} passwordResetTtlMinutes
  * @property {number} passwordResetResendCooldownSeconds
  * @property {number} passwordResetMaxSends
  * @property {string} passwordResetEmailSubject
+ * @property {number} authRefreshTtlDays
+ * @property {number} authMaxActiveSessionFamilies
+ * @property {string} authCsrfSecret
+ * @property {string} jwtAccessPrivateKey
+ * @property {string} jwtAccessKid
+ * @property {Record<string, string>} jwtAccessVerificationKeys
+ * @property {string} jwtAccessIssuer
+ * @property {string} jwtAccessAudience
+ * @property {number} jwtAccessTtlSeconds
+ * @property {number} jwtAccessClockSkewSeconds
  * @property {number} adminAuthSessionTtlMinutes
  * @property {number} adminAuthTokenBytes
  * @property {string} adminAuthDummyPasswordHash
@@ -220,6 +231,30 @@ function getBool(key, fallback = false) {
       return false;
     default:
       return fallback;
+  }
+}
+
+/**
+ * Normalize a JSON object env var.
+ * @param {string} key
+ * @param {Record<string, string>} fallback
+ * @returns {Record<string, string>}
+ */
+function getJsonObject(key, fallback = {}) {
+  const raw = getString(key, "").trim();
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+
+    const out = {};
+    for (const [entryKey, entryValue] of Object.entries(parsed)) {
+      out[String(entryKey)] = String(entryValue || "");
+    }
+    return out;
+  } catch (_) {
+    return fallback;
   }
 }
 
@@ -370,11 +405,23 @@ function buildConfig(meta) {
     authRegisterResendCooldownSeconds: getInt("AUTH_REGISTER_RESEND_COOLDOWN_SECONDS", 60),
     authRegisterMaxSends: getInt("AUTH_REGISTER_MAX_SENDS", 3),
     authRegisterEmailSubject: getString("AUTH_REGISTER_EMAIL_SUBJECT", "Verify your email"),
+    authVerifyEmailEndpoint: getString("AUTH_VERIFY_EMAIL_ENDPOINT", "/auth/verify-email"),
 
     passwordResetTtlMinutes: getInt("PASSWORD_RESET_TTL_MINUTES", 15),
     passwordResetResendCooldownSeconds: getInt("PASSWORD_RESET_RESEND_COOLDOWN_SECONDS", 60),
     passwordResetMaxSends: getInt("PASSWORD_RESET_MAX_SENDS", 3),
     passwordResetEmailSubject: getString("PASSWORD_RESET_EMAIL_SUBJECT", "Password reset"),
+
+    authRefreshTtlDays: getInt("AUTH_REFRESH_TTL_DAYS", 30),
+    authMaxActiveSessionFamilies: getInt("AUTH_MAX_ACTIVE_SESSION_FAMILIES", 5),
+    authCsrfSecret: getString("AUTH_CSRF_SECRET", ""),
+    jwtAccessPrivateKey: getString("JWT_ACCESS_PRIVATE_KEY", ""),
+    jwtAccessKid: getString("JWT_ACCESS_KID", ""),
+    jwtAccessVerificationKeys: getJsonObject("JWT_ACCESS_VERIFY_KEYS", {}),
+    jwtAccessIssuer: getString("JWT_ACCESS_ISSUER", "mail-forwarding-api"),
+    jwtAccessAudience: getString("JWT_ACCESS_AUDIENCE", "mail-forwarding-web"),
+    jwtAccessTtlSeconds: getInt("JWT_ACCESS_TTL_SECONDS", 600),
+    jwtAccessClockSkewSeconds: getInt("JWT_ACCESS_CLOCK_SKEW_SECONDS", 60),
 
     adminAuthSessionTtlMinutes: getInt("ADMIN_AUTH_SESSION_TTL_MINUTES", 12 * 60),
     adminAuthTokenBytes: getInt("ADMIN_AUTH_TOKEN_BYTES", 32),

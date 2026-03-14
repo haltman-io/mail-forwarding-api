@@ -70,77 +70,99 @@ describe("routes", () => {
     expect(res.body).toEqual({ error: "missing_api_key" });
   });
 
-  test("POST /auth/login without params returns invalid_params(email)", async () => {
-    const res = await request(app).post("/auth/login").send({});
+  test("POST /auth/sign-in without params returns invalid_params(identifier)", async () => {
+    const res = await request(app).post("/auth/sign-in").send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "invalid_params", field: "identifier" });
+  });
+
+  test("POST /auth/sign-up without params returns invalid_params(email)", async () => {
+    const res = await request(app).post("/auth/sign-up").send({});
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_params", field: "email" });
   });
 
-  test("POST /auth/register without params returns invalid_params(email)", async () => {
-    const res = await request(app).post("/auth/register").send({});
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "invalid_params", field: "email" });
-  });
-
-  test("GET /auth/register/confirm with invalid token returns invalid_token", async () => {
-    const res = await request(app).get("/auth/register/confirm?token=!!!");
+  test("POST /auth/verify-email with invalid token returns invalid_token", async () => {
+    const res = await request(app).post("/auth/verify-email").send({ token: "bad" });
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_token" });
   });
 
-  test("GET /auth/me without auth token returns missing_auth_token", async () => {
-    const res = await request(app).get("/auth/me");
+  test("GET /auth/session without auth cookie returns invalid_or_expired_session", async () => {
+    const res = await request(app).get("/auth/session");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_auth_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 
-  test("POST /auth/password/forgot without params returns invalid_params(email)", async () => {
-    const res = await request(app).post("/auth/password/forgot").send({});
+  test("GET /auth/csrf without auth cookie returns invalid_or_expired_session", async () => {
+    const res = await request(app).get("/auth/csrf");
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
+  });
+
+  test("POST /auth/forgot-password without params returns invalid_params(email)", async () => {
+    const res = await request(app).post("/auth/forgot-password").send({});
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_params", field: "email" });
   });
 
-  test("POST /auth/password/reset without token returns invalid_params(token)", async () => {
-    const res = await request(app).post("/auth/password/reset").send({});
+  test("POST /auth/reset-password without token returns invalid_params(token)", async () => {
+    const res = await request(app).post("/auth/reset-password").send({});
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_params", field: "token" });
   });
 
-  test("POST /auth/password/reset with invalid token returns invalid_token", async () => {
+  test("POST /auth/reset-password with invalid token returns invalid_token", async () => {
     const res = await request(app)
-      .post("/auth/password/reset")
-      .send({ token: "!!!", new_password: "StrongPassword123" });
+      .post("/auth/reset-password")
+      .send({ token: "bad", new_password: "StrongPassword123" });
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "invalid_token" });
   });
 
-  test("GET /admin/domains without admin token returns missing_admin_token", async () => {
+  test("POST /auth/sign-out without cookies is idempotent success", async () => {
+    const res = await request(app).post("/auth/sign-out");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      action: "sign_out",
+      signed_out: true,
+    });
+  });
+
+  test("legacy /auth/login route is removed", async () => {
+    const res = await request(app).post("/auth/login").send({});
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "not_found" });
+  });
+
+  test("GET /admin/domains without auth cookie returns invalid_or_expired_session", async () => {
     const res = await request(app).get("/admin/domains");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_admin_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 
-  test("GET /admin/me without admin token returns missing_admin_token", async () => {
+  test("GET /admin/me without auth cookie returns invalid_or_expired_session", async () => {
     const res = await request(app).get("/admin/me");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_admin_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 
-  test("GET /admin/handles without admin token returns missing_admin_token", async () => {
+  test("GET /admin/handles without auth cookie returns invalid_or_expired_session", async () => {
     const res = await request(app).get("/admin/handles");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_admin_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 
-  test("GET /admin/users without admin token returns missing_admin_token", async () => {
+  test("GET /admin/users without auth cookie returns invalid_or_expired_session", async () => {
     const res = await request(app).get("/admin/users");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_admin_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 
-  test("PATCH /admin/users/me/password without admin token returns missing_admin_token", async () => {
+  test("PATCH /admin/users/me/password without auth cookie returns invalid_or_expired_session", async () => {
     const res = await request(app).patch("/admin/users/me/password").send({});
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "missing_admin_token" });
+    expect(res.body).toEqual({ error: "invalid_or_expired_session" });
   });
 });
