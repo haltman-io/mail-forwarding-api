@@ -9,3 +9,7 @@ README.md
 .gitignore
 @DOCS
 app/.env_old
+node_modules/
+app-nest/node_modules/
+app-nest/dist/
+app-nest/coverage/
