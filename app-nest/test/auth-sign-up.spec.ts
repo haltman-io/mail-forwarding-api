@@ -171,7 +171,7 @@ describe("AuthController sign-up", () => {
     );
     expect(authUsersRepository.createUser).toHaveBeenCalledWith({
       email: "alice@example.com",
-      username: "Alice_User",
+      username: "alice_user",
       passwordHash: "$argon2id$newhash",
       isActive: 1,
       isAdmin: 0,

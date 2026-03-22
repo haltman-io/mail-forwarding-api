@@ -27,7 +27,7 @@ export function normalizeUsername(raw: unknown): string | null {
 }
 
 export function parseIdentifier(raw: unknown): ParsedIdentifier | null {
-  const value = String(raw || "").trim();
+  const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) return null;
 
   if (value.includes("@")) {

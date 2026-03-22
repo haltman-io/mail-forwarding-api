@@ -13,3 +13,8 @@ node_modules/
 app-nest/node_modules/
 app-nest/dist/
 app-nest/coverage/
+bkp
+.env
+.env.local
+.env.prod
+.claude

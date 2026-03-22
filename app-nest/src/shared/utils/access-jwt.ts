@@ -89,7 +89,7 @@ export function verifyAccessJwt(
   token: unknown,
   options: { nowMs?: number } = {},
 ): { header: Record<string, unknown>; claims: AccessJwtClaims } {
-  const raw = String(token || "").trim();
+  const raw = typeof token === "string" ? token.trim() : "";
   if (!raw) throw new Error("missing_token");
 
   const parts = raw.split(".");
@@ -109,7 +109,7 @@ export function verifyAccessJwt(
   if (header.typ !== JWT_TYP) throw new Error("invalid_token_type");
   if (header.alg !== JWT_ALG) throw new Error("invalid_token_algorithm");
 
-  const kid = String(header.kid || "").trim();
+  const kid = typeof header.kid === "string" ? header.kid.trim() : "";
   if (!kid) throw new Error("missing_token_kid");
 
   const publicKeyPem = toPem(settings.jwtAccessVerificationKeys?.[kid] || "");

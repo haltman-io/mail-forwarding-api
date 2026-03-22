@@ -200,20 +200,18 @@ describe("AuthController sign-in", () => {
       REFRESH_COOKIE_NAME,
     ]);
     expect(res.cookies[0]?.options.secure).toBe(true);
-    expect(res.body).toEqual(
-      expect.objectContaining({
-        ok: true,
-        action: "sign_in",
-        authenticated: true,
-        user: expect.objectContaining({
-          id: user.id,
-          email: user.email,
-        }),
-        session: expect.objectContaining({
-          session_family_id: "family-123",
-          refresh_expires_at: "2026-04-20T00:00:00.000Z",
-        }),
-      }),
-    );
+    expect(res.body).toMatchObject({
+      ok: true,
+      action: "sign_in",
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      session: {
+        session_family_id: "family-123",
+        refresh_expires_at: "2026-04-20T00:00:00.000Z",
+      },
+    });
   });
 });

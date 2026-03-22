@@ -9,6 +9,18 @@ export type MockResponse = Response & {
   clearedCookies: Array<{ name: string; options: CookieOptions }>;
 };
 
+function serializeMockValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+  return "";
+}
+
 export function createMockRequest(
   overrides: Partial<Request> & {
     body?: Record<string, unknown>;
@@ -90,7 +102,7 @@ export function createMockResponse(): MockResponse {
   response.cookie = (name: string, value: unknown, options?: CookieOptions) => {
     response.cookies.push({
       name,
-      value: String(value ?? ""),
+      value: serializeMockValue(value),
       options: { ...(options || {}) } as CookieOptions,
     });
     return response;

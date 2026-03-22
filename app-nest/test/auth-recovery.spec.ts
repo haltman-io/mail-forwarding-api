@@ -27,7 +27,8 @@ function createController() {
       throw new Error(`unexpected config key: ${key}`);
     }),
   };
-  const getActiveUserByEmail = jest.fn<(email: string) => Promise<unknown | null>>();
+  const getActiveUserByEmail = jest
+    .fn<(email: string) => Promise<Record<string, unknown> | null>>();
   const authUsersRepository = {
     getActiveUserByEmail,
   };

@@ -43,18 +43,6 @@ type UpsertResult =
   | { action: "cooldown" | "rate_limited"; pending: PendingMeta }
   | { action: "created" | "resent"; token_plain: string; pending: PendingMeta };
 
-function runQuery<T>(
-  executor: DatabaseService | PoolConnection,
-  sql: string,
-  params: readonly unknown[] = [],
-): Promise<T> {
-  return (
-    executor as {
-      query: (statement: string, values?: readonly unknown[]) => Promise<T>;
-    }
-  ).query(sql, [...params]);
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

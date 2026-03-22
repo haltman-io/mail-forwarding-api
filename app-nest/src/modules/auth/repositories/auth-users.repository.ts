@@ -98,18 +98,6 @@ export interface RotateRefreshSessionResult {
   sessionId?: number | null;
 }
 
-function runQuery<T>(
-  executor: DatabaseService | PoolConnection,
-  sql: string,
-  params: readonly unknown[] = [],
-): Promise<T> {
-  return (
-    executor as {
-      query: (statement: string, values?: readonly unknown[]) => Promise<T>;
-    }
-  ).query(sql, [...params]);
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -138,7 +126,7 @@ function assertUserId(value: unknown): number {
 }
 
 function assertSessionFamilyId(value: unknown): string {
-  const sessionFamilyId = String(value || "").trim();
+  const sessionFamilyId = typeof value === "string" ? value.trim() : "";
   if (!sessionFamilyId || sessionFamilyId.length > 64) {
     throw new Error("invalid_session_family_id");
   }
@@ -171,7 +159,7 @@ function assertUsername(value: unknown): string {
 }
 
 function assertPasswordHash(value: unknown): string {
-  const passwordHash = String(value || "").trim();
+  const passwordHash = typeof value === "string" ? value.trim() : "";
   if (!passwordHash || passwordHash.length > 255) throw new Error("invalid_password_hash");
   return passwordHash;
 }

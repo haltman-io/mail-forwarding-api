@@ -7,7 +7,7 @@ export type AuthCookieSameSite = "lax" | "strict" | "none";
 
 function parseCookiesHeader(headerValue: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
-  const raw = String(headerValue || "");
+  const raw = typeof headerValue === "string" ? headerValue.trim() : "";
   if (!raw) return out;
 
   for (const chunk of raw.split(";")) {
@@ -27,7 +27,7 @@ export function shouldUseSecureCookies(envName: string): boolean {
 }
 
 export function normalizeSameSite(value: unknown): AuthCookieSameSite {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (normalized === "strict") return "strict";
   if (normalized === "none") return "none";
   return "lax";
@@ -49,7 +49,7 @@ export function buildCookieOptions(payload: {
 
 export function readCookie(req: Request, name: string): string {
   const cookies = parseCookiesHeader(req.headers.cookie);
-  return String(cookies[name] || "").trim();
+  return typeof cookies[name] === "string" ? cookies[name].trim() : "";
 }
 
 export function getAccessCookie(req: Request): string {
