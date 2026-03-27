@@ -15,6 +15,11 @@ app-nest/dist/
 app-nest/coverage/
 bkp
 .env
-.env.local
-.env.prod
+.env.*
+!.env.example
+!.env.*.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
 .claude
