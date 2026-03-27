@@ -6,9 +6,9 @@ that Postfix later uses to forward mail.
 
 ## Features
 
-- Create alias requests (`/forward/subscribe`) with strict validation
-- Confirm alias creation via email tokens (`/forward/confirm`)
-- Request alias removal (`/forward/unsubscribe`) and confirm via token
+- Create alias requests (`/api/forward/subscribe`) with strict validation
+- Preview confirmation links via `GET /api/forward/confirm` and mutate via `POST`
+- Request alias removal (`/api/forward/unsubscribe`) and confirm via token
 - API key–authenticated alias management endpoints
 - Rate limiting and abuse protections
 - Structured logging with request IDs
@@ -27,7 +27,7 @@ git clone https://github.com/haltman-io/mail-forwarding.git
 cd mail-forwarding/mail-forwarding-api/app
 npm install
 cp .env.example .env
-npm run dev
+npm run start:dev
 ```
 
 ## Configuration
@@ -51,13 +51,10 @@ See `.env.example` for the full list.
 
 ```bash
 npm run start       # run production server
-npm run dev         # run with node --watch
+npm run start:dev   # run with tsx watch
 npm run test        # run tests
-npm run test:watch  # jest watch mode
 npm run lint        # eslint
-npm run lint:fix    # eslint --fix
-npm run format      # prettier check
-npm run format:fix  # prettier write
+npm run typecheck   # TypeScript check
 ```
 
 ## Project Structure
@@ -65,35 +62,28 @@ npm run format:fix  # prettier write
 ```
 app/
   src/
-    app.js
-    server.js
-    config/
-    lib/
-    middlewares/
-    controllers/
-    routes/
-    services/
-    repositories/
+    main.ts
+    app.module.ts
+    modules/
+    shared/
     types/
-  tests/
-    unit/
-    integration/
-  scripts/
+  test/
 ```
 
 ## API Endpoints (core)
 
 ### Authentication
 
-- `POST /auth/register` (body: `email`, `password`) starts common-user registration and sends an email verification token
-- `GET /auth/register/confirm?token=...` consumes the one-time verification token and activates the account
-- `POST /auth/login` (body: `email`, `password`) authenticates any active user and returns a bearer token plus `user.is_admin`
-- `POST /auth/password/forgot` (body: `email`) requests a single-use password reset code valid for 15 minutes
-- `POST /auth/password/reset` (body: `token`, `new_password`) consumes the reset code, changes the password and revokes active sessions
-- `GET /auth/me` (requires bearer token or `X-Auth-Token`) returns the authenticated user profile
-- `GET /admin/me` (requires admin token) validates that the authenticated user is still an administrator
+- `POST /api/auth/sign-in`
+- `GET /api/auth/session`
+- `GET /api/auth/csrf`
+- `POST /api/auth/refresh`
+- `POST /api/auth/sign-out`
+- `POST /api/auth/sign-out-all`
+- `POST /api/auth/forgot-password`
+- `POST /api/auth/reset-password`
 
-### `GET /forward/subscribe`
+### `GET /api/forward/subscribe`
 Request alias creation.
 
 Query params:
@@ -101,22 +91,34 @@ Query params:
 - `to` (required)
 - `domain` (optional; defaults to `DEFAULT_ALIAS_DOMAIN`)
 
-### `GET /forward/confirm`
-Confirm alias creation/removal with a token.
+### `GET /api/forward/confirm`
+Preview a pending alias creation/removal request without consuming the token.
 
 Query params:
 - `token` (required)
 
-### `GET /forward/unsubscribe`
+### `POST /api/forward/confirm`
+Apply the pending alias creation/removal request.
+
+JSON body:
+- `token` (required)
+
+### `GET /api/forward/unsubscribe`
 Request alias removal.
 
 Query params:
 - `alias` (required; full alias address)
 
+### General public reads
+
+- `GET /api/domains`
+- `GET /api/stats`
+
 ### API credentials + alias management
 
 - `POST /api/credentials/create` (body or query: `email`, `days`)
-- `GET /api/credentials/confirm?token=...`
+- `GET /api/credentials/confirm?token=...` (preview only)
+- `POST /api/credentials/confirm` (JSON body: `token`)
 - `GET /api/alias/list` (requires `X-API-Key`)
 - `POST /api/alias/create` (requires `X-API-Key`)
 - `POST /api/alias/delete` (requires `X-API-Key`)
@@ -128,8 +130,8 @@ upstream check-dns service while applying local validation and rate limits.
 
 Endpoints:
 
-- `POST /request/ui` (JSON body: `{ "target": "example.com" }`)
-- `POST /request/email` (JSON body: `{ "target": "example.com" }`)
+- `POST /api/request/ui` (JSON body: `{ "target": "example.com" }`)
+- `POST /api/request/email` (JSON body: `{ "target": "example.com" }`)
 - `GET /api/checkdns/:target`
 
 Config:
@@ -137,6 +139,22 @@ Config:
 - `CHECKDNS_BASE_URL` (required)
 - `CHECKDNS_TOKEN` (required; sent as `x-api-key`)
 - `CHECKDNS_HTTP_TIMEOUT_MS` (optional; default 8000)
+
+## Reverse Proxy
+
+In production, expose only the API namespace to the NestJS process and let the
+static site handle all other paths.
+
+```caddy
+handle /api/* {
+    reverse_proxy 127.0.0.1:9090
+}
+
+handle {
+    try_files {path}.html {path}/index.html {path}
+    file_server
+}
+```
 
 ## Logging
 

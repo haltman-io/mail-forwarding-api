@@ -1,19 +1,49 @@
+# =========================================================
+# custom paths
+# =========================================================
 app/redis.conf
 @dev-env/1.md
 login_schema.sql
 api-routes.md
-README.md
-README.md
-.gitignore
 @DOCS/BACKEND_RESPONSES.md
-.gitignore
 @DOCS
-app/.env_old
-node_modules/
-app-nest/node_modules/
-app-nest/dist/
-app-nest/coverage/
-bkp
+.claude
+.agent
+.agents
+.vscode
+skills-lock.json
+/app/docs
+/app/app.zip
+app.zip
+
+# =========================================================
+# dependencies
+# =========================================================
+/app/node_modules/
+
+# =========================================================
+# build / runtime output
+# =========================================================
+/app/dist/
+/app/build/
+/app/out/
+/app/coverage/
+/app/.nyc_output/
+
+# =========================================================
+# logs
+# =========================================================
+/app/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================================================
+# environment / secrets
+# =========================================================
 .env
 .env.*
 !.env.example
@@ -22,4 +52,69 @@ bkp
 **/.env.*
 !**/.env.example
 !**/.env.*.example
-.claude
+
+# =========================================================
+# nestjs / typescript
+# =========================================================
+/app/*.tsbuildinfo
+
+# =========================================================
+# cache / temp
+# =========================================================
+/app/.tmp/
+/app/.temp/
+/app/tmp/
+/app/.cache/
+/app/.eslintcache
+
+# =========================================================
+# test artifacts
+# =========================================================
+/app/junit.xml
+/app/test-results/
+/app/playwright-report/
+
+# =========================================================
+# package managers
+# =========================================================
+/app/.pnpm-store/
+/app/.npm/
+/app/.yarn/
+/app/.yarn/cache/
+/app/.yarn/unplugged/
+/app/.yarn/build-state.yml
+/app/.yarn/install-state.gz
+
+# =========================================================
+# editors / ide
+# =========================================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+.idea/
+*.iml
+
+# =========================================================
+# os files
+# =========================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================================================
+# docker / runtime misc
+# =========================================================
+*.pid
+*.seed
+*.pid.lock
+
+# =========================================================
+# archives / temp editor files
+# =========================================================
+*.tgz
+*.swp
+*.swo
+*~
