@@ -8,7 +8,7 @@ console.log('[ecosystem] Build finished.');
 module.exports = {
     apps: [
         {
-            name: "mail-forwarding-api-nest",
+            name: "mail-forwarding-api",
             script: "./dist/src/main.js",
             cwd: ".",
 
