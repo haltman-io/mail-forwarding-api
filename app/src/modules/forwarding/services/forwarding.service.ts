@@ -330,37 +330,6 @@ export class ForwardingService {
     };
   }
 
-  async previewConfirmation(token: string): Promise<{
-    previewBody: Record<string, unknown>;
-    token: string;
-  }> {
-    if (!isConfirmationCodeValid(token)) {
-      throw new PublicHttpException(400, { ok: false, error: "invalid_token" });
-    }
-
-    const tokenHash32 = sha256Buffer(token);
-    const pending = await this.emailConfirmationsRepository.getPendingByTokenHash(tokenHash32);
-
-    if (!pending) {
-      throw new PublicHttpException(400, { ok: false, error: "invalid_or_expired" });
-    }
-
-    const previewBody = {
-      ok: true,
-      pending: true,
-      mutation_required: true,
-      intent: String(pending.intent || ""),
-      address: `${String(pending.alias_name || "")}@${String(pending.alias_domain || "")}`,
-      goto: String(pending.email || ""),
-      confirm_via: {
-        method: "POST",
-        path: "/api/forward/confirm",
-      },
-    };
-
-    return { previewBody, token };
-  }
-
   async confirmAction(tokenRaw: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
     const token = normalizeConfirmationCode(tokenRaw);
     if (!token) {

@@ -197,16 +197,41 @@ describe("ForwardingController.confirm", () => {
     expect(emailConfirmationsRepository.markConfirmedById).toHaveBeenCalled();
   });
 
-  it("treats GET confirm as a preview and does not mutate state", async () => {
-    const { controller, emailConfirmationsRepository } = createServiceAndController();
+  it("GET confirm executes confirmation directly and returns JSON", async () => {
+    const {
+      controller,
+      emailConfirmationsRepository,
+      aliasRepository,
+      domainRepository,
+      banPolicyService,
+    } = createServiceAndController();
 
-    emailConfirmationsRepository.getPendingByTokenHash.mockResolvedValue({
+    const pending = {
       id: 12,
       email: "owner@example.com",
       intent: "subscribe",
       alias_name: "sales",
       alias_domain: "example.com",
+    };
+
+    emailConfirmationsRepository.getPendingByTokenHash
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(pending);
+    domainRepository.getActiveByName.mockResolvedValue({
+      id: 9,
+      name: "example.com",
+      active: 1,
     });
+    banPolicyService.findActiveNameBan.mockResolvedValue(null);
+    banPolicyService.findActiveDomainBan.mockResolvedValue(null);
+    banPolicyService.findActiveEmailOrDomainBan.mockResolvedValue(null);
+    aliasRepository.getByAddress.mockResolvedValue(null);
+    aliasRepository.existsReservedHandle.mockResolvedValue(false);
+    aliasRepository.createIfNotExists.mockResolvedValue({
+      ok: true,
+      created: true,
+    });
+    emailConfirmationsRepository.markConfirmedById.mockResolvedValue(true);
 
     const req = createMockRequest({
       method: "GET",
@@ -215,22 +240,14 @@ describe("ForwardingController.confirm", () => {
     });
     const res = createMockResponse();
 
-    await controller.confirmPreview(req, res);
+    await controller.confirmGet(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({
-      ok: true,
-      pending: true,
-      mutation_required: true,
-      intent: "subscribe",
-      address: "sales@example.com",
-      goto: "owner@example.com",
-      confirm_via: {
-        method: "POST",
-        path: "/api/forward/confirm",
-      },
-    });
-    expect(emailConfirmationsRepository.markConfirmedById).not.toHaveBeenCalled();
+    const body = res.body as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.confirmed).toBe(true);
+    expect(body.intent).toBe("subscribe");
+    expect(emailConfirmationsRepository.markConfirmedById).toHaveBeenCalled();
   });
 
   it("returns conflict instead of consuming subscribe confirmation after owner drift", async () => {

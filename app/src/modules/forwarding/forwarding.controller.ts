@@ -6,7 +6,6 @@ import {
 } from "../../shared/utils/confirmation-code.js";
 import { SensitiveHeadersInterceptor } from "../../shared/http/sensitive-headers.interceptor.js";
 import { ConfirmBodyDto } from "./dto/confirm-body.dto.js";
-import { renderForwardingConfirmPreviewPage } from "./views/confirm-preview.view.js";
 import { ForwardingService } from "./services/forwarding.service.js";
 
 @Controller("forward")
@@ -49,20 +48,14 @@ export class ForwardingController {
 
   @Get("confirm")
   @UseInterceptors(SensitiveHeadersInterceptor)
-  async confirmPreview(@Req() req: Request, @Res() res: Response): Promise<void> {
+  async confirmGet(@Req() req: Request, @Res() res: Response): Promise<void> {
     const query = req.query as Record<string, unknown>;
     const rawToken = typeof query?.token === "string" ? query.token : "";
     const token = normalizeConfirmationCode(rawToken);
 
-    const preview = await this.forwardingService.previewConfirmation(token);
-    preview.previewBody.confirm_via = { method: "POST", path: req.path };
+    const result = await this.forwardingService.confirmAction(token);
 
-    if (this.wantsHtml(req)) {
-      res.status(200).send(renderForwardingConfirmPreviewPage(preview.token, preview.previewBody));
-      return;
-    }
-
-    res.status(200).json(preview.previewBody);
+    res.status(result.status).json(result.body);
   }
 
   @Post("confirm")
@@ -75,10 +68,5 @@ export class ForwardingController {
     const result = await this.forwardingService.confirmAction(dto.token);
 
     res.status(result.status).json(result.body);
-  }
-
-  private wantsHtml(req: Request): boolean {
-    const accept = String(req.headers.accept || "").toLowerCase();
-    return accept.includes("text/html");
   }
 }

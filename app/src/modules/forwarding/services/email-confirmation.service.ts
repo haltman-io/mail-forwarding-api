@@ -206,7 +206,7 @@ export class EmailConfirmationService {
   private buildConfirmUrl(token: string, baseUrl: string, endpoint: string): string {
     const base =
       String(baseUrl || "").trim().replace(/\/+$/, "") || this.getDefaultConfirmBaseUrl();
-    const ep = String(endpoint || "/api/forward/confirm")
+    const ep = String(endpoint || "/console")
       .trim()
       .replace(/^\/?/, "/");
 
