@@ -24,7 +24,7 @@ export class CheckDnsClient {
 
   requestUi(target: string): Promise<AxiosResponse> {
     return this.client.post(
-      "/api/request/ui",
+      "/request/ui",
       { target },
       { headers: { "x-api-key": this.config.token, "content-type": "application/json" } }
     );
@@ -32,14 +32,14 @@ export class CheckDnsClient {
 
   requestEmail(target: string): Promise<AxiosResponse> {
     return this.client.post(
-      "/api/request/email",
+      "/request/email",
       { target },
       { headers: { "x-api-key": this.config.token, "content-type": "application/json" } }
     );
   }
 
   checkDns(target: string): Promise<AxiosResponse> {
-    return this.client.get(`/api/checkdns/${encodeURIComponent(target)}`, {
+    return this.client.get(`/checkdns/${encodeURIComponent(target)}`, {
       headers: { "x-api-key": this.config.token },
     });
   }
