@@ -39,7 +39,7 @@ export class CheckDnsClient {
   }
 
   checkDns(target: string): Promise<AxiosResponse> {
-    return this.client.get(`/checkdns/${encodeURIComponent(target)}`, {
+    return this.client.get(`/api/checkdns/${encodeURIComponent(target)}`, {
       headers: { "x-api-key": this.config.token },
     });
   }

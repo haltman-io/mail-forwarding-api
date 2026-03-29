@@ -57,13 +57,13 @@ describe("CheckDnsClient", () => {
     );
   });
 
-  it("calls the upstream DNS status endpoint without the public api prefix", async () => {
+  it("calls the upstream DNS status endpoint with the internal api prefix", async () => {
     const { client, get } = createClient();
     get.mockResolvedValue({ status: 200, data: { status: "ok" } });
 
     await client.checkDns("example.com");
 
-    expect(get).toHaveBeenCalledWith("/checkdns/example.com", {
+    expect(get).toHaveBeenCalledWith("/api/checkdns/example.com", {
       headers: {
         "x-api-key": "relay-token",
       },
