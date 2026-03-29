@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
+import { DatabaseService } from "../../../shared/database/database.service.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import {
@@ -20,6 +21,7 @@ export class AliasService {
     private readonly activityRepository: ActivityRepository,
     private readonly domainRepository: DomainRepository,
     private readonly banPolicyService: BanPolicyService,
+    private readonly databaseService: DatabaseService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -143,19 +145,29 @@ export class AliasService {
       throw new PublicHttpException(400, { error: "invalid_params", field: "alias" });
     }
 
-    const row = await this.aliasRepository.getByAddress(parsed.email);
-    if (!row) {
-      throw new PublicHttpException(404, { error: "alias_not_found", alias: parsed.email });
-    }
+    const result = await this.databaseService.withTransaction(async (connection) => {
+      const row = await this.aliasRepository.getByAddress(parsed.email, connection, { forUpdate: true });
+      if (!row) {
+        throw new PublicHttpException(404, { error: "alias_not_found", alias: parsed.email });
+      }
 
-    const goto = String(row.goto || "").trim().toLowerCase();
-    if (goto !== params.ownerEmail) {
-      throw new PublicHttpException(403, { error: "forbidden" });
-    }
+      if (Number(row.active) !== 1) {
+        throw new PublicHttpException(400, { error: "alias_inactive", alias: parsed.email });
+      }
 
-    const result = await this.aliasRepository.deleteByAddress(parsed.email);
-    if (!result.deleted) {
-      throw new PublicHttpException(404, { error: "alias_not_found", alias: parsed.email });
+      const goto = String(row.goto || "").trim().toLowerCase();
+      if (goto !== params.ownerEmail) {
+        throw new PublicHttpException(403, { error: "forbidden" });
+      }
+
+      return this.aliasRepository.deactivateByAddress(parsed.email, connection);
+    });
+
+    if (!result.deactivated) {
+      throw new PublicHttpException(409, {
+        error: "alias_state_changed",
+        alias: parsed.email,
+      });
     }
 
     return { ok: true, deleted: true, alias: parsed.email };

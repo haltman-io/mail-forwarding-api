@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { PoolConnection } from "mariadb";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
+import { PERMANENT_ALIAS_GOTO } from "../../../shared/utils/alias-policy.js";
 
 export interface AliasRow {
   id: number;
@@ -225,16 +226,16 @@ export class AliasRepository {
     );
   }
 
-  async deleteByAddress(
+  async deactivateByAddress(
     address: string,
     connection?: PoolConnection,
-  ): Promise<{ ok: boolean; deleted: boolean; affectedRows: number }> {
+  ): Promise<{ ok: boolean; deactivated: boolean; affectedRows: number }> {
     if (connection) {
-      return this.deleteByAddressWithConnection(connection, address);
+      return this.deactivateByAddressWithConnection(connection, address);
     }
 
     return this.database.withTransaction((conn: PoolConnection) =>
-      this.deleteByAddressWithConnection(conn, address),
+      this.deactivateByAddressWithConnection(conn, address),
     );
   }
 
@@ -284,19 +285,23 @@ export class AliasRepository {
     };
   }
 
-  private async deleteByAddressWithConnection(
+  private async deactivateByAddressWithConnection(
     connection: PoolConnection,
     address: string,
-  ): Promise<{ ok: boolean; deleted: boolean; affectedRows: number }> {
+  ): Promise<{ ok: boolean; deactivated: boolean; affectedRows: number }> {
     const result = await runQuery<InsertResult>(
       connection,
-      `DELETE FROM alias
+      `UPDATE alias
+       SET goto = ?,
+           active = 0,
+           modified = CURRENT_TIMESTAMP()
        WHERE address = ?
+         AND active = 1
        LIMIT 1`,
-      [address],
+      [PERMANENT_ALIAS_GOTO, address],
     );
 
     const affected = Number(result?.affectedRows ?? 0);
-    return { ok: true, deleted: affected === 1, affectedRows: affected };
+    return { ok: true, deactivated: affected === 1, affectedRows: affected };
   }
 }

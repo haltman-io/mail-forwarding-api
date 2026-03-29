@@ -15,7 +15,7 @@ describe("ForwardingController.confirm", () => {
     };
     const aliasRepository = {
       getByAddress: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
-      deleteByAddress: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      deactivateByAddress: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
       existsReservedHandle: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
       createIfNotExists: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
@@ -62,7 +62,7 @@ describe("ForwardingController.confirm", () => {
     };
   }
 
-  it("confirms unsubscribe only after deleting the alias", async () => {
+  it("confirms unsubscribe only after deactivating the alias", async () => {
     const { controller, emailConfirmationsRepository, aliasRepository } = createServiceAndController();
     const pending = {
       id: 12,
@@ -78,8 +78,13 @@ describe("ForwardingController.confirm", () => {
     aliasRepository.getByAddress.mockResolvedValue({
       id: 4,
       goto: "owner@example.com",
+      active: 1,
     });
-    aliasRepository.deleteByAddress.mockResolvedValue({ ok: true, deleted: true, affectedRows: 1 });
+    aliasRepository.deactivateByAddress.mockResolvedValue({
+      ok: true,
+      deactivated: true,
+      affectedRows: 1,
+    });
     emailConfirmationsRepository.markConfirmedById.mockResolvedValue(true);
 
     const req = createMockRequest({
@@ -99,11 +104,11 @@ describe("ForwardingController.confirm", () => {
       removed: true,
       address: "sales@example.com",
     });
-    const deleteCallOrder = aliasRepository.deleteByAddress.mock.invocationCallOrder[0] ?? 0;
+    const deactivateCallOrder = aliasRepository.deactivateByAddress.mock.invocationCallOrder[0] ?? 0;
     const confirmCallOrder =
       emailConfirmationsRepository.markConfirmedById.mock.invocationCallOrder[0] ?? 0;
-    expect(deleteCallOrder).toBeGreaterThan(0);
-    expect(deleteCallOrder).toBeLessThan(confirmCallOrder);
+    expect(deactivateCallOrder).toBeGreaterThan(0);
+    expect(deactivateCallOrder).toBeLessThan(confirmCallOrder);
   });
 
   it("does not consume the token when unsubscribe validation fails", async () => {
@@ -122,6 +127,7 @@ describe("ForwardingController.confirm", () => {
     aliasRepository.getByAddress.mockResolvedValue({
       id: 4,
       goto: "other@example.com",
+      active: 1,
     });
 
     const req = createMockRequest({
@@ -139,6 +145,44 @@ describe("ForwardingController.confirm", () => {
       error: "alias_owner_changed",
       address: "sales@example.com",
     });
+    expect(emailConfirmationsRepository.markConfirmedById).not.toHaveBeenCalled();
+  });
+
+  it("does not consume the token when unsubscribe finds an inactive alias", async () => {
+    const { controller, emailConfirmationsRepository, aliasRepository } = createServiceAndController();
+    const pending = {
+      id: 12,
+      email: "owner@example.com",
+      intent: "unsubscribe",
+      alias_name: "sales",
+      alias_domain: "example.com",
+    };
+
+    emailConfirmationsRepository.getPendingByTokenHash
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(pending);
+    aliasRepository.getByAddress.mockResolvedValue({
+      id: 4,
+      goto: "alias@haltman.io",
+      active: 0,
+    });
+
+    const req = createMockRequest({
+      method: "POST",
+      path: "/api/forward/confirm",
+      body: { token },
+    });
+    const res = createMockResponse();
+
+    await controller.confirm(req.body as never, req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      ok: false,
+      error: "alias_inactive",
+      alias: "sales@example.com",
+    });
+    expect(aliasRepository.deactivateByAddress).not.toHaveBeenCalled();
     expect(emailConfirmationsRepository.markConfirmedById).not.toHaveBeenCalled();
   });
 
@@ -172,6 +216,7 @@ describe("ForwardingController.confirm", () => {
     aliasRepository.getByAddress.mockResolvedValue({
       id: 4,
       goto: "owner@example.com",
+      active: 1,
     });
     emailConfirmationsRepository.markConfirmedById.mockResolvedValue(true);
 
@@ -281,6 +326,7 @@ describe("ForwardingController.confirm", () => {
     aliasRepository.getByAddress.mockResolvedValue({
       id: 4,
       goto: "other@example.com",
+      active: 1,
     });
 
     const req = createMockRequest({

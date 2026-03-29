@@ -1,14 +1,14 @@
 # Mail Forwarding API
 
 A Node.js API that manages mail-forwarding aliases for the base-postfix-forwarder stack.
-This service **does not receive emails**. It **creates and removes alias rows** in MariaDB
+This service **does not receive emails**. It **creates and deactivates alias rows** in MariaDB
 that Postfix later uses to forward mail.
 
 ## Features
 
 - Create alias requests (`/api/forward/subscribe`) with strict validation
 - Preview confirmation links via `GET /api/forward/confirm` and mutate via `POST`
-- Request alias removal (`/api/forward/unsubscribe`) and confirm via token
+- Request alias deactivation (`/api/forward/unsubscribe`) and confirm via token
 - API key–authenticated alias management endpoints
 - Rate limiting and abuse protections
 - Structured logging with request IDs

@@ -394,12 +394,16 @@ export class ForwardingService {
         return { status: 404, body: { ok: false, error: "alias_not_found", address } };
       }
 
+      if (Number(row.active) !== 1) {
+        return { status: 400, body: { ok: false, error: "alias_inactive", alias: address } };
+      }
+
       const currentGoto = String(row.goto || "").trim().toLowerCase();
       if (currentGoto && currentGoto !== toEmail) {
         return { status: 409, body: { ok: false, error: "alias_owner_changed", address } };
       }
 
-      const del = await this.aliasRepository.deleteByAddress(address, connection);
+      const deactivated = await this.aliasRepository.deactivateByAddress(address, connection);
       const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
         lockedPending.id,
         connection,
@@ -414,7 +418,7 @@ export class ForwardingService {
           ok: true,
           confirmed: true,
           intent,
-          removed: Boolean(del.deleted),
+          removed: Boolean(deactivated.deactivated),
           address,
         },
       };

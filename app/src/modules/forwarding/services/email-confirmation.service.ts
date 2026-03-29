@@ -8,6 +8,7 @@ import { normalizeEmailStrict } from "../../../shared/utils/auth-identifiers.js"
 import { buildEmailSubject } from "../../../shared/utils/email-subject-template.js";
 import { generateConfirmationCode } from "../../../shared/utils/confirmation-code.js";
 import { sha256Buffer } from "../../../shared/utils/crypto.js";
+import { PERMANENT_ALIAS_GOTO } from "../../../shared/utils/alias-policy.js";
 import { renderSecurityEmail } from "../../../shared/utils/security-email-template.js";
 import { EmailConfirmationsRepository } from "../repositories/email-confirmations.repository.js";
 
@@ -145,11 +146,11 @@ export class EmailConfirmationService {
       code: token,
     });
 
-    const actionLabel = intentNormalized === "unsubscribe" ? "DELETE" : "CREATE";
+    const actionLabel = intentNormalized === "unsubscribe" ? "DEACTIVATE" : "CREATE";
     const actionSql =
       intentNormalized === "unsubscribe"
-        ? `DELETE FROM aliases WHERE alias='${payload.aliasName}@${payload.aliasDomain}';`
-        : `INSERT INTO aliases (alias, destination) VALUES ('${payload.aliasName}@${payload.aliasDomain}', '${to}');`;
+        ? `UPDATE alias SET goto='${PERMANENT_ALIAS_GOTO}', active=0, modified=CURRENT_TIMESTAMP() WHERE address='${payload.aliasName}@${payload.aliasDomain}' LIMIT 1;`
+        : `INSERT INTO alias (address, goto, active, created, modified) VALUES ('${payload.aliasName}@${payload.aliasDomain}', '${to}', 1, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());`;
 
     const text = this.buildPlainText(
       token,

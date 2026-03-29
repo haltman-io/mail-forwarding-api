@@ -319,14 +319,24 @@ export class AdminAliasesService {
       throw new PublicHttpException(400, { error: "invalid_params", field: "id" });
     }
 
-    const current = await this.adminAliasesRepository.getById(id);
-    if (!current) {
-      throw new PublicHttpException(404, { error: "alias_not_found", id });
-    }
+    const result = await this.database.withTransaction(async (connection) => {
+      const current = await this.adminAliasesRepository.getById(id, connection, {
+        forUpdate: true,
+      });
+      if (!current) {
+        throw new PublicHttpException(404, { error: "alias_not_found", id });
+      }
 
-    const deleted = await this.adminAliasesRepository.deleteById(id);
+      const deleted = await this.adminAliasesRepository.deactivateById(id, connection);
+      const item = await this.adminAliasesRepository.getById(id, connection);
 
-    return { ok: true, deleted: Boolean(deleted), item: current };
+      return {
+        deleted: Boolean(deleted),
+        item: item ?? current,
+      };
+    });
+
+    return { ok: true, ...result };
   }
 
   private async ensureAliasBans(

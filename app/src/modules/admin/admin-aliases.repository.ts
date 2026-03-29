@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { PoolConnection } from "mariadb";
 
 import { DatabaseService } from "../../shared/database/database.service.js";
+import { PERMANENT_ALIAS_GOTO } from "../../shared/utils/alias-policy.js";
 import {
   CountRow,
   ExistsRow,
@@ -225,14 +226,18 @@ export class AdminAliasesRepository {
     return Boolean(result?.affectedRows === 1);
   }
 
-  async deleteById(id: number, connection?: PoolConnection): Promise<boolean> {
+  async deactivateById(id: number, connection?: PoolConnection): Promise<boolean> {
     const executor = connection ?? this.database;
     const result = await runQuery<InsertResult>(
       executor,
-      `DELETE FROM alias
+      `UPDATE alias
+       SET goto = ?,
+           active = 0,
+           modified = CURRENT_TIMESTAMP()
        WHERE id = ?
+         AND active = 1
        LIMIT 1`,
-      [id],
+      [PERMANENT_ALIAS_GOTO, id],
     );
 
     return Boolean(result?.affectedRows === 1);
