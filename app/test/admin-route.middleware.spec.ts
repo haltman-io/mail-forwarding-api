@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import type { Request } from "express";
 
-import { AdminRouteMiddleware } from "../src/modules/admin/admin-route.middleware.js";
+import { AdminRouteMiddleware } from "../src/modules/admin/middlewares/admin-route.middleware.js";
 import type { ResolvedAuthContext } from "../src/modules/auth/services/auth-session-context.service.js";
 import { createMockRequest, createMockResponse } from "./http-mocks.js";
 

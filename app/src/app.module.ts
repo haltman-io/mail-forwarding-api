@@ -2,8 +2,8 @@ import { MiddlewareConsumer, Module, RequestMethod } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 
 import { AdminModule } from "./modules/admin/admin.module.js";
-import { AdminMutationCsrfMiddleware } from "./modules/admin/admin-mutation-csrf.middleware.js";
-import { AdminRouteMiddleware } from "./modules/admin/admin-route.middleware.js";
+import { AdminMutationCsrfMiddleware } from "./modules/admin/middlewares/admin-mutation-csrf.middleware.js";
+import { AdminRouteMiddleware } from "./modules/admin/middlewares/admin-route.middleware.js";
 import { ApiModule } from "./modules/api/api.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { BansModule } from "./modules/bans/bans.module.js";

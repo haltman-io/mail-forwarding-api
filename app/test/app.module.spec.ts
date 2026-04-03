@@ -2,8 +2,8 @@ import { jest } from "@jest/globals";
 import type { MiddlewareConsumer } from "@nestjs/common";
 import { RequestMethod } from "@nestjs/common";
 
-import { AdminMutationCsrfMiddleware } from "../src/modules/admin/admin-mutation-csrf.middleware.js";
-import { AdminRouteMiddleware } from "../src/modules/admin/admin-route.middleware.js";
+import { AdminMutationCsrfMiddleware } from "../src/modules/admin/middlewares/admin-mutation-csrf.middleware.js";
+import { AdminRouteMiddleware } from "../src/modules/admin/middlewares/admin-route.middleware.js";
 import { RequestContextMiddleware } from "../src/shared/logging/request-context.middleware.js";
 import { IpBanMiddleware } from "../src/shared/security/ip-ban.middleware.js";
 import { RouteRateLimitMiddleware } from "../src/shared/security/rate-limit/route-rate-limit.middleware.js";

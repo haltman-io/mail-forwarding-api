@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 
-import { AdminHandlesService } from "../src/modules/admin/admin-aliases-handles.service.js";
+import { AdminHandlesService } from "../src/modules/admin/handles/admin-handles.service.js";
 
 function createService() {
   const database = {

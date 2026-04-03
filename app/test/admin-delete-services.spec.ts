@@ -1,8 +1,10 @@
 import { jest } from "@jest/globals";
 
-import { AdminAliasesService, AdminHandlesService } from "../src/modules/admin/admin-aliases-handles.service.js";
-import { AdminBansService, AdminApiTokensService } from "../src/modules/admin/admin-bans-api-tokens.service.js";
-import { AdminDomainsService } from "../src/modules/admin/admin-session-domains.service.js";
+import { AdminAliasesService } from "../src/modules/admin/aliases/admin-aliases.service.js";
+import { AdminHandlesService } from "../src/modules/admin/handles/admin-handles.service.js";
+import { AdminBansService } from "../src/modules/admin/bans/admin-bans.service.js";
+import { AdminApiTokensService } from "../src/modules/admin/api-tokens/admin-api-tokens.service.js";
+import { AdminDomainsService } from "../src/modules/admin/domains/admin-domains.service.js";
 import { PERMANENT_ALIAS_GOTO } from "../src/shared/utils/alias-policy.js";
 
 describe("Admin delete services", () => {

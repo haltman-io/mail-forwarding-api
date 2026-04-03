@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 
 import { ApiCredentialsService } from "../src/modules/api/services/api-credentials.service.js";
-import { ApiCredentialsController } from "../src/modules/api/api-credentials.controller.js";
+import { ApiCredentialsController } from "../src/modules/api/controllers/api-credentials.controller.js";
 import { createMockRequest, createMockResponse } from "./http-mocks.js";
 
 describe("ApiCredentialsController.confirmCredentials", () => {

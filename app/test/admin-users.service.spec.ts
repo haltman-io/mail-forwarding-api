@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 
 import { PublicHttpException } from "../src/shared/errors/public-http.exception.js";
-import { AdminUsersService } from "../src/modules/admin/admin-users.service.js";
+import { AdminUsersService } from "../src/modules/admin/users/admin-users.service.js";
 
 describe("AdminUsersService", () => {
   function createService() {

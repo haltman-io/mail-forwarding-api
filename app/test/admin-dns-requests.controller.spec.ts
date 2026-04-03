@@ -1,5 +1,4 @@
-import { AdminDnsRequestsController } from "../src/modules/admin/admin-dns-requests.controller.js";
-import { createMockResponse } from "./http-mocks.js";
+import { AdminDnsRequestsController } from "../src/modules/admin/dns-requests/admin-dns-requests.controller.js";
 
 describe("AdminDnsRequestsController", () => {
   it("returns a paginated dns request list", async () => {
@@ -9,18 +8,16 @@ describe("AdminDnsRequestsController", () => {
         pagination: { total: 1, limit: 50, offset: 0 },
       }),
     } as never);
-    const response = createMockResponse();
 
-    await controller.listDnsRequests({}, response);
+    const result = await controller.listDnsRequests({});
 
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual({
+    expect(result).toEqual({
       items: [{ id: 17, target: "example.com", type: "EMAIL" }],
       pagination: { total: 1, limit: 50, offset: 0 },
     });
   });
 
-  it("returns 201 when creating a dns request", async () => {
+  it("returns created dns request", async () => {
     const controller = new AdminDnsRequestsController({
       createDnsRequest: async () => ({
         ok: true,
@@ -28,23 +25,18 @@ describe("AdminDnsRequestsController", () => {
         item: { id: 18, target: "example.com", type: "UI" },
       }),
     } as never);
-    const response = createMockResponse();
 
-    await controller.createDnsRequest(
-      {
-        target: "example.com",
-        type: "UI",
-        status: "PENDING",
-        expires_at: new Date(),
-      },
-      response,
-    );
+    const result = await controller.createDnsRequest({
+      target: "example.com",
+      type: "UI",
+      status: "PENDING",
+      expires_at: new Date(),
+    });
 
-    expect(response.statusCode).toBe(201);
-    expect(response.body).toEqual({
+    expect(result).toEqual({
       ok: true,
       created: true,
       item: { id: 18, target: "example.com", type: "UI" },
     });
-});
+  });
 });

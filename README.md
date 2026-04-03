@@ -1,166 +1,239 @@
 # Mail Forwarding API
 
-A Node.js API that manages mail-forwarding aliases for the base-postfix-forwarder stack.
-This service **does not receive emails**. It **creates and deactivates alias rows** in MariaDB
-that Postfix later uses to forward mail.
+REST API for managing email aliases, forwarding rules, and API credentials. Built with NestJS 11, backed by MariaDB, with optional Redis for distributed rate limiting.
 
 ## Features
 
-- Create alias requests (`/api/forward/subscribe`) with strict validation
-- Preview confirmation links via `GET /api/forward/confirm` and mutate via `POST`
-- Request alias deactivation (`/api/forward/unsubscribe`) and confirm via token
-- API key–authenticated alias management endpoints
-- Rate limiting and abuse protections
-- Structured logging with request IDs
+- Email alias creation, forwarding, and deactivation with email confirmation
+- API key authentication for programmatic alias management
+- Admin panel API with full CRUD for aliases, domains, handles, bans, API tokens, DNS requests, and users
+- JWT-based admin authentication (EdDSA/Ed25519) with session families and refresh token rotation
+- CSRF protection on admin mutation endpoints
+- Password hashing with Argon2id
+- Password reset flow with email confirmation
+- Multi-layered rate limiting (per-IP, per-email, per-key) with delay and hard-limit strategies
+- IP ban middleware
+- DNS verification relay to an external check-dns service
+- Configurable CORS with origin validation
+- Structured JSON logging with automatic sensitive field redaction
+- Multi-tenant origin policy support
 
-## Prerequisites
+## Architecture
 
-This project depends on the **base-postfix-forwarder** stack and its database schema.
-You must deploy the base stack first.
+The application follows a modular NestJS architecture with clear separation between controllers, services, and repositories. There is no ORM; all database access uses parameterized SQL queries through a thin `DatabaseService` abstraction over the MariaDB connection pool.
 
-See: `FWD-Basestack.md`
-
-## Quickstart
-
-```bash
-git clone https://github.com/haltman-io/mail-forwarding.git
-cd mail-forwarding/mail-forwarding-api/app
-npm install
-cp .env.example .env
-npm run start:dev
+```
+Request
+  -> Express middleware (request context, IP ban, rate limiting)
+  -> NestJS guards (API key auth, admin session auth)
+  -> NestJS interceptors (audit logging, sensitive header removal)
+  -> Controller
+  -> Service (business logic, validation, ban checks)
+  -> Repository (raw SQL via DatabaseService)
+  -> MariaDB
 ```
 
-## Configuration
-
-All configuration is via environment variables. Start with `.env.example`.
-
-Key variables:
-
-- `APP_ENV` (`dev`, `hml`, `prod`)
-- `APP_HOST` and `APP_PORT`
-- `LOG_LEVEL` (`trace`, `debug`, `info`, `warn`, `error`, `fatal`)
-- `APP_PUBLIC_URL` (base URL used in confirmation links)
-- `SMTP_*` (required to send confirmation emails)
-- `MARIADB_*` (required to read/write aliases)
-- `DEFAULT_ALIAS_DOMAIN`
-- `CHECKDNS_BASE_URL` and `CHECKDNS_TOKEN` (relay to DNS validation service)
-
-See `.env.example` for the full list.
-
-## Scripts
-
-```bash
-npm run start       # run production server
-npm run start:dev   # run with tsx watch
-npm run test        # run tests
-npm run lint        # eslint
-npm run typecheck   # TypeScript check
-```
+Cross-cutting concerns (logging, exception handling, CORS, tenant policy) are provided globally via `InfrastructureModule`. Redis is optional and used only for distributed rate-limit counters; when unavailable, the system falls back to in-memory counters.
 
 ## Project Structure
 
 ```
 app/
-  src/
-    main.ts
-    app.module.ts
-    modules/
-    shared/
-    types/
-  test/
+├── src/
+│   ├── main.ts                             # Bootstrap, global prefix (/api), pipes, filters
+│   ├── app.module.ts                       # Root module, middleware registration
+│   ├── types/                              # Express augmentation, ambient types
+│   ├── modules/
+│   │   ├── admin/                          # Admin panel API
+│   │   │   ├── admin.module.ts
+│   │   │   ├── admin.controller.ts         # /admin/me, /admin/protected
+│   │   │   ├── aliases/                    # CRUD for email aliases
+│   │   │   ├── api-tokens/                 # CRUD for API tokens
+│   │   │   ├── bans/                       # CRUD for bans (IP, domain, email, name)
+│   │   │   ├── dns-requests/               # CRUD for DNS verification requests
+│   │   │   ├── domains/                    # CRUD for mail domains
+│   │   │   ├── handles/                    # CRUD for reserved handles
+│   │   │   ├── users/                      # CRUD for admin users, notifications
+│   │   │   ├── session/                    # Admin session resolution
+│   │   │   ├── middlewares/                # Admin route auth, CSRF for mutations
+│   │   │   ├── pipes/                      # ParseIdPipe (param validation)
+│   │   │   ├── dto/                        # Shared admin DTOs
+│   │   │   └── utils/                      # Admin helpers, database utils
+│   │   ├── api/                            # Public API (key-authenticated)
+│   │   │   ├── controllers/                # Alias operations, credential creation
+│   │   │   ├── services/                   # Alias logic, credentials, email
+│   │   │   ├── repositories/               # Alias, API tokens, logs, activity
+│   │   │   ├── guards/                     # API key guard
+│   │   │   ├── interceptors/               # API audit log interceptor
+│   │   │   ├── dto/                        # Request DTOs
+│   │   │   └── templates/                  # HTML confirmation page templates
+│   │   ├── auth/                           # Admin authentication
+│   │   │   ├── services/                   # Sign-in, session, password, reset email
+│   │   │   ├── repositories/               # Users, password reset requests
+│   │   │   └── dto/                        # Sign-in, forgot/reset password DTOs
+│   │   ├── forwarding/                     # Email forwarding subscription
+│   │   │   ├── services/                   # Subscribe/unsubscribe, email confirmation
+│   │   │   ├── repositories/               # Confirmation state tracking
+│   │   │   └── dto/                        # Confirm body DTO
+│   │   ├── domains/                        # Active domain listing (cached)
+│   │   ├── bans/                           # Ban policy evaluation
+│   │   ├── check-dns/                      # DNS verification relay
+│   │   └── stats/                          # Alias metrics
+│   └── shared/
+│       ├── infrastructure.module.ts        # Global providers
+│       ├── config/                         # Typed config factories, env validation
+│       ├── database/                       # DatabaseService (MariaDB pool, transactions)
+│       ├── redis/                          # RedisService (optional, lazy init)
+│       ├── logging/                        # AppLogger, request context middleware
+│       ├── errors/                         # HttpExceptionFilter, PublicHttpException
+│       ├── http/                           # NoCacheInterceptor, SensitiveHeadersInterceptor, pagination
+│       ├── security/                       # CORS factory, IP ban middleware, rate limiting
+│       ├── tenancy/                        # Tenant origin policy
+│       ├── validation/                     # Mailbox parsing, domain validation, content-type guard
+│       └── utils/                          # JWT, cookies, CSRF, crypto, email templates
+├── test/                                   # Unit and integration tests (Jest)
+├── package.json
+├── tsconfig.json
+├── tsconfig.build.json
+├── nest-cli.json
+├── jest.config.ts
+├── eslint.config.mjs
+├── deploy.sh                               # PM2 deployment script
+└── .env.example                            # Environment variable reference
 ```
 
-## API Endpoints (core)
+## Installation
 
-### Authentication
+**Prerequisites:** Node.js >= 20, MariaDB instance, an external check-dns service.
 
-- `POST /api/auth/sign-in`
-- `GET /api/auth/session`
-- `GET /api/auth/csrf`
-- `POST /api/auth/refresh`
-- `POST /api/auth/sign-out`
-- `POST /api/auth/sign-out-all`
-- `POST /api/auth/forgot-password`
-- `POST /api/auth/reset-password`
-
-### `GET /api/forward/subscribe`
-Request alias creation.
-
-Query params:
-- `name` (required)
-- `to` (required)
-- `domain` (optional; defaults to `DEFAULT_ALIAS_DOMAIN`)
-
-### `GET /api/forward/confirm`
-Preview a pending alias creation/removal request without consuming the token.
-
-Query params:
-- `token` (required)
-
-### `POST /api/forward/confirm`
-Apply the pending alias creation/removal request.
-
-JSON body:
-- `token` (required)
-
-### `GET /api/forward/unsubscribe`
-Request alias removal.
-
-Query params:
-- `alias` (required; full alias address)
-
-### General public reads
-
-- `GET /api/domains`
-- `GET /api/stats`
-
-### API credentials + alias management
-
-- `POST /api/credentials/create` (body or query: `email`, `days`)
-- `GET /api/credentials/confirm?token=...` (preview only)
-- `POST /api/credentials/confirm` (JSON body: `token`)
-- `GET /api/alias/list` (requires `X-API-Key`)
-- `POST /api/alias/create` (requires `X-API-Key`)
-- `POST /api/alias/delete` (requires `X-API-Key`)
-
-## DNS validation relay (check-dns)
-
-This API exposes a small relay that forwards DNS validation requests to the
-upstream check-dns service while applying local validation and rate limits.
-
-Endpoints:
-
-- `POST /api/request/ui` (JSON body: `{ "target": "example.com" }`)
-- `POST /api/request/email` (JSON body: `{ "target": "example.com" }`)
-- `GET /api/checkdns/:target`
-
-Config:
-
-- `CHECKDNS_BASE_URL` (required)
-- `CHECKDNS_TOKEN` (required; sent as `x-api-key`)
-- `CHECKDNS_HTTP_TIMEOUT_MS` (optional; default 8000)
-
-## Reverse Proxy
-
-In production, expose only the API namespace to the NestJS process and let the
-static site handle all other paths.
-
-```caddy
-handle /api/* {
-    reverse_proxy 127.0.0.1:9090
-}
-
-handle {
-    try_files {path}.html {path}/index.html {path}
-    file_server
-}
+```bash
+cd app
+npm install
+cp .env.example .env
+# Edit .env with your database credentials, JWT keys, and other required values
 ```
 
-## Logging
+### Generate Ed25519 keys for JWT
 
-Logs are JSON-formatted for easy parsing. Each request includes `x-request-id`.
-Errors are logged with stack traces and sanitized context.
+The auth system uses EdDSA (Ed25519) for access tokens. Generate a key pair:
 
-## License
+```bash
+node -e "
+const { generateKeyPairSync } = require('crypto');
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+console.log('Private (PEM):');
+console.log(privateKey.export({ type: 'pkcs8', format: 'pem' }));
+console.log('Public (PEM):');
+console.log(publicKey.export({ type: 'spki', format: 'pem' }));
+"
+```
 
-Unlicense (see `LICENSE`).
+Set `JWT_ACCESS_PRIVATE_KEY` to the private key PEM and `JWT_ACCESS_VERIFY_KEYS` to a JSON object mapping key IDs to public key PEMs.
+
+## Usage
+
+```bash
+# Development (hot reload via tsx)
+npm run start:dev
+
+# Production build
+npm run build
+npm start
+
+# Type check
+npm run typecheck
+
+# Lint
+npm run lint
+
+# Run tests
+npm test
+```
+
+The server listens on `APP_HOST:APP_PORT` (default `127.0.0.1:8080`). All routes are prefixed with `/api`.
+
+### Deployment
+
+The included `deploy.sh` pulls the latest code and restarts via PM2:
+
+```bash
+./deploy.sh
+```
+
+## Required Environment Variables
+
+These must be set for the application to start:
+
+| Variable | Description |
+|---|---|
+| `MARIADB_HOST` | MariaDB server host |
+| `MARIADB_USER` | Database user |
+| `MARIADB_DATABASE` | Database name |
+| `CHECKDNS_BASE_URL` | Base URL of the external DNS check service |
+| `CHECKDNS_TOKEN` | Auth token for the DNS check service |
+| `AUTH_CSRF_SECRET` | Secret for CSRF token generation (HMAC-SHA256) |
+| `JWT_ACCESS_PRIVATE_KEY` | Ed25519 private key (PEM) for signing access tokens |
+| `JWT_ACCESS_KID` | Key ID for the active signing key |
+| `JWT_ACCESS_VERIFY_KEYS` | JSON object of key IDs to public keys for verification |
+
+See `.env.example` for the full list of optional variables including rate-limit thresholds, SMTP settings, Redis URL, CORS origins, and Argon2 tuning parameters.
+
+## API Overview
+
+### Public Endpoints
+
+| Module | Prefix | Purpose |
+|---|---|---|
+| Forwarding | `/api/forward` | Subscribe/unsubscribe email aliases with confirmation flow |
+| Credentials | `/api/credentials` | Create and confirm API keys via email verification |
+| Check DNS | `/api/request`, `/api/checkdns` | Relay DNS verification requests to external service |
+| Domains | `/api/domains` | List active mail domains (10s cache) |
+| Stats | `/api/stats` | Alias metrics (60s cache) |
+
+### API Key-Authenticated Endpoints
+
+| Prefix | Purpose |
+|---|---|
+| `/api/alias` | List, create, and deactivate aliases owned by the key holder |
+| `/api/activity` | View activity log for the key holder |
+
+Authenticated via `Authorization` header with an API key (64-char hex string, stored as SHA256 hash).
+
+### Admin Endpoints
+
+All under `/api/admin`. Require JWT session authentication. CSRF token required for POST/PATCH/DELETE.
+
+| Resource | Prefix | Operations |
+|---|---|---|
+| Session | `/api/admin/me` | View current admin session |
+| Aliases | `/api/admin/aliases` | Full CRUD |
+| API Tokens | `/api/admin/api-tokens` | Full CRUD |
+| Bans | `/api/admin/bans` | Full CRUD (IP, domain, email, name) |
+| DNS Requests | `/api/admin/dns-requests` | Full CRUD |
+| Domains | `/api/admin/domains` | Full CRUD |
+| Handles | `/api/admin/handles` | Full CRUD |
+| Users | `/api/admin/users` | Full CRUD + password change |
+
+### Auth Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/auth/sign-in` | POST | Authenticate admin user |
+| `/api/auth/session` | GET | Get current session info |
+| `/api/auth/csrf` | GET | Get CSRF token |
+| `/api/auth/refresh` | POST | Refresh access token |
+| `/api/auth/sign-out` | POST | End current session |
+| `/api/auth/sign-out-all` | POST | Revoke all sessions |
+| `/api/auth/forgot-password` | POST | Request password reset email |
+| `/api/auth/reset-password` | POST | Reset password with token |
+
+## Development Notes
+
+- **No ORM.** All SQL is hand-written and parameterized. Row types are defined as TypeScript interfaces in each repository file.
+- **ESM-only.** The project uses `"type": "module"` with NodeNext module resolution. All internal imports use `.js` extensions.
+- **Redis is optional.** If `REDIS_URL` is not set, rate-limit counters use in-memory storage (not shared across instances).
+- **Tests** run with `--experimental-vm-modules` for ESM support in Jest. Use `npm test` (not `npx jest` directly).
+- **Strict TypeScript.** The project enables `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and `noImplicitOverride`.
+- **Rate limiting** is configurable per-endpoint via environment variables. Each endpoint can have delay rules (slow-down) and hard limits (429 rejection). See `.env.example` for all threshold variables.
+- **Admin mutations** require a CSRF token in the request header, derived from the session via HMAC-SHA256.
+- **Password hashing** uses Argon2id with configurable time cost, memory cost, parallelism, hash length, and salt length.

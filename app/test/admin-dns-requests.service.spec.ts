@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 
-import { AdminDnsRequestsService } from "../src/modules/admin/admin-dns-requests.service.js";
+import { AdminDnsRequestsService } from "../src/modules/admin/dns-requests/admin-dns-requests.service.js";
 import { PublicHttpException } from "../src/shared/errors/public-http.exception.js";
 
 describe("AdminDnsRequestsService", () => {

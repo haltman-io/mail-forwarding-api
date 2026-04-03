@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 
-import { AdminMutationCsrfMiddleware } from "../src/modules/admin/admin-mutation-csrf.middleware.js";
+import { AdminMutationCsrfMiddleware } from "../src/modules/admin/middlewares/admin-mutation-csrf.middleware.js";
 import { createMockRequest, createMockResponse } from "./http-mocks.js";
 
 describe("AdminMutationCsrfMiddleware", () => {

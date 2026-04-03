@@ -2,8 +2,8 @@ import { Module } from "@nestjs/common";
 
 import { BansModule } from "../bans/bans.module.js";
 import { DomainsModule } from "../domains/domains.module.js";
-import { ApiAliasController } from "./api-alias.controller.js";
-import { ApiCredentialsController } from "./api-credentials.controller.js";
+import { ApiAliasController } from "./controllers/api-alias.controller.js";
+import { ApiCredentialsController } from "./controllers/api-credentials.controller.js";
 import { AliasRepositoryModule } from "./alias-repository.module.js";
 import { ApiKeyGuard } from "./guards/api-key.guard.js";
 import { ApiLogInterceptor } from "./interceptors/api-log.interceptor.js";
