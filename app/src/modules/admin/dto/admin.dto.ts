@@ -1,5 +1,6 @@
 import { Transform, Type } from "class-transformer";
 import {
+  IsBoolean,
   IsDate,
   IsInt,
   IsOptional,
@@ -45,6 +46,16 @@ function transformOptionalDate(value: unknown): Date | null | undefined | string
 function normalizeOptionalSearch(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   return normalizeLowerTrim(value);
+}
+
+function transformOptionalBoolean(value: unknown): boolean | undefined | string {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return "__invalid_boolean__";
 }
 
 export class AdminPaginationQueryDto {
@@ -303,6 +314,11 @@ export class AdminCreateBanDto {
   @Transform(({ value }) => transformOptionalDate(value))
   @IsDate()
   expires_at?: Date | null;
+
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBoolean(value))
+  @IsBoolean()
+  disable_matching_aliases?: boolean;
 }
 
 export class AdminUpdateBanDto {

@@ -168,7 +168,11 @@ describe("Admin delete services", () => {
     });
     tokenDeleteById.mockResolvedValue(true);
 
-    const bansService = new AdminBansService(adminBansRepository as never);
+    const bansService = new AdminBansService(
+      {} as never,
+      adminBansRepository as never,
+      {} as never,
+    );
     const apiTokensService = new AdminApiTokensService(adminApiTokensRepository as never);
 
     const banResult = await bansService.deleteBan(8);

@@ -226,6 +226,41 @@ export class AdminAliasesRepository {
     return Boolean(result?.affectedRows === 1);
   }
 
+  async disableMatchingActiveAliasesForBan(
+    input: { banType: string; banValue: string },
+    connection?: PoolConnection,
+  ): Promise<number> {
+    const executor = connection ?? this.database;
+    let matchSql = "";
+    let params: unknown[] = [];
+
+    if (input.banType === "email") {
+      matchSql = "goto = ?";
+      params = [input.banValue];
+    } else if (input.banType === "domain") {
+      matchSql =
+        "(SUBSTRING_INDEX(goto, '@', -1) = ? OR SUBSTRING_INDEX(goto, '@', -1) LIKE CONCAT('%.', ?))";
+      params = [input.banValue, input.banValue];
+    } else if (input.banType === "name") {
+      matchSql = "SUBSTRING_INDEX(address, '@', 1) = ?";
+      params = [input.banValue];
+    } else {
+      return 0;
+    }
+
+    const result = await runQuery<InsertResult>(
+      executor,
+      `UPDATE alias
+       SET active = 0,
+           modified = CURRENT_TIMESTAMP()
+       WHERE active = 1
+         AND ${matchSql}`,
+      params,
+    );
+
+    return Number(result?.affectedRows ?? 0);
+  }
+
   async deactivateById(id: number, connection?: PoolConnection): Promise<boolean> {
     const executor = connection ?? this.database;
     const result = await runQuery<InsertResult>(

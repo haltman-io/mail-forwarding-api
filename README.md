@@ -7,6 +7,7 @@ REST API for managing email aliases, forwarding rules, and API credentials. Buil
 - Email alias creation, forwarding, and deactivation with email confirmation
 - API key authentication for programmatic alias management
 - Admin panel API with full CRUD for aliases, domains, handles, bans, API tokens, DNS requests, and users
+- Admin ban creation can optionally disable matching active aliases for `email`, `domain`, and `name` bans
 - JWT-based admin authentication (EdDSA/Ed25519) with session families and refresh token rotation
 - CSRF protection on admin mutation endpoints
 - Password hashing with Argon2id
@@ -208,11 +209,13 @@ All under `/api/admin`. Require JWT session authentication. CSRF token required 
 | Session | `/api/admin/me` | View current admin session |
 | Aliases | `/api/admin/aliases` | Full CRUD |
 | API Tokens | `/api/admin/api-tokens` | Full CRUD |
-| Bans | `/api/admin/bans` | Full CRUD (IP, domain, email, name) |
+| Bans | `/api/admin/bans` | Full CRUD (IP, domain, email, name); `POST` accepts optional `disable_matching_aliases` to deactivate matching active aliases for `email`, `domain`, and `name` bans |
 | DNS Requests | `/api/admin/dns-requests` | Full CRUD |
 | Domains | `/api/admin/domains` | Full CRUD |
 | Handles | `/api/admin/handles` | Full CRUD |
 | Users | `/api/admin/users` | Full CRUD + password change |
+
+When `POST /api/admin/bans` is called with `disable_matching_aliases: true`, the response also includes a `disabled_aliases` count and a summary `message`.
 
 ### Auth Endpoints
 

@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
+import type { PoolConnection } from "mariadb";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
-import { CountRow, InsertResult } from "../utils/admin-database.utils.js";
+import { CountRow, InsertResult, runQuery } from "../utils/admin-database.utils.js";
 import { buildContainsLikePattern } from "../utils/admin.utils.js";
 
 export interface AdminBanRow {
@@ -113,8 +114,10 @@ export class AdminBansRepository {
     banValue: string;
     reason?: string | null;
     expiresAt?: Date | null;
-  }): Promise<{ ok: boolean; insertId: number | null }> {
-    const result = await this.database.query<InsertResult>(
+  }, connection?: PoolConnection): Promise<{ ok: boolean; insertId: number | null }> {
+    const executor = connection ?? this.database;
+    const result = await runQuery<InsertResult>(
+      executor,
       `INSERT INTO api_bans (
         ban_type, ban_value, reason, created_at, expires_at, revoked_at, revoked_reason
       ) VALUES (
