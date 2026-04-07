@@ -52,6 +52,9 @@ type RateLimitSettings = {
   authLoginFailPerHourPerIdentifier: number;
   authLoginFailPer6HoursPerIdentifierIp: number;
   authLoginFailPer5MinPerIdentifierIp: number;
+  forwardingCyclePerHourPerIp: number;
+  confirmSlowDelayAfter: number;
+  confirmSlowDelayStepMs: number;
   aliasListPerMinPerKey: number;
   aliasCreatePerMinPerKey: number;
   aliasDeletePerMinPerKey: number;
@@ -170,6 +173,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
     if (method === "GET" && path === "/api/forward/subscribe") {
       return [
         this.globalLimitRule(),
+        this.forwardingCycleIpRule("subscribe"),
         {
           kind: "delay",
           name: "sub_slow_ip",
@@ -569,9 +573,38 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
     };
   }
 
+  private forwardingCycleIpRule(where: string): LimitRule {
+    return {
+      kind: "limit",
+      name: "fwd_cycle_ip",
+      windowMs: 60 * 60_000,
+      limit: this.settings.forwardingCyclePerHourPerIp,
+      message: {
+        error: "rate_limited",
+        where,
+        reason: "too_many_forwarding_operations_ip",
+      },
+      key: keyByIp,
+    };
+  }
+
   private confirmRules(tokenResolver: (request: Request) => string): Rule[] {
     return [
       this.globalLimitRule(),
+      this.forwardingCycleIpRule("confirm"),
+      {
+        kind: "delay",
+        name: "confirm_slow_ip",
+        windowMs: 60_000,
+        delayAfter: this.settings.confirmSlowDelayAfter,
+        delayMs: (hits) =>
+          Math.max(
+            0,
+            (hits - this.settings.confirmSlowDelayAfter) *
+              this.settings.confirmSlowDelayStepMs,
+          ),
+        key: keyByIp,
+      },
       {
         kind: "limit",
         name: "confirm_ip",

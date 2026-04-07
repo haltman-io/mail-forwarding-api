@@ -52,6 +52,10 @@ export const rateLimitConfig = registerAs("rateLimit", () => ({
   authLoginFailPer6HoursPerIdentifierIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_6H_PER_EMAIL_IP", 3),
   authLoginFailPer5MinPerIdentifierIp: getInt("RL_ADMIN_LOGIN_FAIL_PER_5MIN_PER_EMAIL_IP", 2),
 
+  forwardingCyclePerHourPerIp: getInt("RL_FORWARDING_CYCLE_PER_HOUR_PER_IP", 10),
+  confirmSlowDelayAfter: getInt("SD_CONFIRM_DELAY_AFTER", 3),
+  confirmSlowDelayStepMs: getInt("SD_CONFIRM_DELAY_STEP_MS", 500),
+
   aliasListPerMinPerKey: getInt("RL_ALIAS_LIST_PER_MIN_PER_KEY", 600),
   aliasCreatePerMinPerKey: getInt("RL_ALIAS_CREATE_PER_MIN_PER_KEY", 120),
   aliasDeletePerMinPerKey: getInt("RL_ALIAS_DELETE_PER_MIN_PER_KEY", 120),

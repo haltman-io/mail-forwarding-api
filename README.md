@@ -230,6 +230,37 @@ When `POST /api/admin/bans` is called with `disable_matching_aliases: true`, the
 | `/api/auth/forgot-password` | POST | Request password reset email |
 | `/api/auth/reset-password` | POST | Reset password with token |
 
+## Rate Limiting
+
+Rate limiting is implemented as a NestJS middleware (`RouteRateLimitMiddleware`) that evaluates a set of rules per request based on method and path. Rules fall into two categories:
+
+- **Delay rules** (slow-down): artificially delay the response after a threshold is reached, with incrementally increasing latency.
+- **Limit rules** (hard cap): reject the request with `429 Too Many Requests` when the counter exceeds the configured threshold.
+
+Counters are stored in Redis when available, falling back to in-memory storage. Each rule has a unique name that determines the counter key, a time window, and a key function that determines the bucketing dimension (IP, token, email, etc.).
+
+### Cross-endpoint cycle limiting
+
+The forwarding endpoints (`/api/forward/subscribe` and `/api/forward/confirm`) share a single rate-limit counter (`fwd_cycle_ip`) bucketed by IP address. This counter increments on both subscribe and confirm requests, preventing automated loops that create aliases in rapid succession by cycling between the two endpoints with unique parameters on each call.
+
+Each alias creation cycle (one subscribe + one confirm) consumes 2 hits from this shared bucket. The limit is configured via `RL_FORWARDING_CYCLE_PER_HOUR_PER_IP` (default: 10, allowing up to 5 aliases per hour per IP).
+
+### Confirm endpoint delay
+
+The `/api/forward/confirm` endpoint applies progressive delay after a configurable number of requests per IP per minute. This mirrors the delay rules already present on subscribe and unsubscribe endpoints. Configured via `SD_CONFIRM_DELAY_AFTER` (threshold) and `SD_CONFIRM_DELAY_STEP_MS` (delay increment per subsequent request).
+
+### Rate-limit environment variables
+
+All rate-limit thresholds are configurable via environment variables. See `.env.example` for the complete list with descriptions. Key variables for forwarding abuse prevention:
+
+| Variable | Default | Description |
+|---|---|---|
+| `RL_FORWARDING_CYCLE_PER_HOUR_PER_IP` | `10` | Combined subscribe + confirm hard limit per IP per hour |
+| `SD_CONFIRM_DELAY_AFTER` | `3` | Confirm requests per minute before delay kicks in |
+| `SD_CONFIRM_DELAY_STEP_MS` | `500` | Delay increment (ms) per confirm request above threshold |
+| `RL_SUBSCRIBE_PER_10MIN_PER_IP` | `60` | Subscribe hard limit per IP per 10 minutes |
+| `RL_CONFIRM_PER_10MIN_PER_IP` | `120` | Confirm hard limit per IP per 10 minutes |
+
 ## Development Notes
 
 - **No ORM.** All SQL is hand-written and parameterized. Row types are defined as TypeScript interfaces in each repository file.
@@ -237,6 +268,6 @@ When `POST /api/admin/bans` is called with `disable_matching_aliases: true`, the
 - **Redis is optional.** If `REDIS_URL` is not set, rate-limit counters use in-memory storage (not shared across instances).
 - **Tests** run with `--experimental-vm-modules` for ESM support in Jest. Use `npm test` (not `npx jest` directly).
 - **Strict TypeScript.** The project enables `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and `noImplicitOverride`.
-- **Rate limiting** is configurable per-endpoint via environment variables. Each endpoint can have delay rules (slow-down) and hard limits (429 rejection). See `.env.example` for all threshold variables.
+- **Rate limiting** is configurable per-endpoint via environment variables. Each endpoint can have delay rules (slow-down) and hard limits (429 rejection). Forwarding endpoints (subscribe and confirm) share a cross-endpoint cycle counter per IP to prevent automated alias creation loops. See `.env.example` for all threshold variables.
 - **Admin mutations** require a CSRF token in the request header, derived from the session via HMAC-SHA256.
 - **Password hashing** uses Argon2id with configurable time cost, memory cost, parallelism, hash length, and salt length.
