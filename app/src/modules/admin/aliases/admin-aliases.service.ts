@@ -10,6 +10,7 @@ import { BanPolicyService } from "../../bans/ban-policy.service.js";
 import { AdminAliasesRepository } from "./admin-aliases.repository.js";
 import type { AdminAliasRow } from "./admin-aliases.repository.js";
 import { AdminDomainsRepository } from "../domains/admin-domains.repository.js";
+import { AdminCreationNotificationService } from "../utils/admin-creation-notification.service.js";
 import type {
   AdminAliasesListQueryDto,
   AdminCreateAliasDto,
@@ -23,6 +24,7 @@ export class AdminAliasesService {
     private readonly adminAliasesRepository: AdminAliasesRepository,
     private readonly adminDomainsRepository: AdminDomainsRepository,
     private readonly banPolicyService: BanPolicyService,
+    private readonly creationNotificationService: AdminCreationNotificationService,
   ) {}
 
   async listAliases(query: AdminAliasesListQueryDto): Promise<{
@@ -135,6 +137,11 @@ export class AdminAliasesService {
         return created.insertId
           ? this.adminAliasesRepository.getById(created.insertId, connection)
           : null;
+      });
+
+      this.creationNotificationService.notifyAliasCreated({
+        aliasAddress: address.email,
+        gotoEmail: goto.email,
       });
 
       return { ok: true, created: true, item: row };

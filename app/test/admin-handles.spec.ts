@@ -19,10 +19,15 @@ function createService() {
     findActiveEmailOrDomainBan: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
   };
 
+  const creationNotificationService = {
+    notifyHandleCreated: jest.fn(),
+  };
+
   const service = new AdminHandlesService(
     database as never,
     adminHandlesRepository as never,
     banPolicyService as never,
+    creationNotificationService as never,
   );
 
   return {

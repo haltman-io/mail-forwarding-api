@@ -9,6 +9,7 @@ import {
   normalizeLowerTrim,
 } from "../../../shared/validation/mailbox.js";
 import { BanPolicyService } from "../../bans/ban-policy.service.js";
+import { AdminCreationNotificationService } from "../utils/admin-creation-notification.service.js";
 import { AdminHandlesRepository } from "./admin-handles.repository.js";
 import type { AdminHandleRow } from "./admin-handles.repository.js";
 import type {
@@ -23,6 +24,7 @@ export class AdminHandlesService {
     private readonly database: DatabaseService,
     private readonly adminHandlesRepository: AdminHandlesRepository,
     private readonly banPolicyService: BanPolicyService,
+    private readonly creationNotificationService: AdminCreationNotificationService,
   ) {}
 
   async listHandles(query: AdminHandlesListQueryDto): Promise<{
@@ -97,6 +99,11 @@ export class AdminHandlesService {
         return created.insertId
           ? this.adminHandlesRepository.getById(created.insertId, connection)
           : null;
+      });
+
+      this.creationNotificationService.notifyHandleCreated({
+        handle,
+        addressEmail: address.email,
       });
 
       return { ok: true, created: true, item: row };

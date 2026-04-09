@@ -20,6 +20,7 @@ import { AdminDomainsRepository } from "./domains/admin-domains.repository.js";
 import { AdminDomainsController } from "./domains/admin-domains.controller.js";
 import { AdminHandlesController } from "./handles/admin-handles.controller.js";
 import { AdminHandlesRepository } from "./handles/admin-handles.repository.js";
+import { AdminCreationNotificationService } from "./utils/admin-creation-notification.service.js";
 import { AdminNotificationService } from "./users/admin-notification.service.js";
 import { AdminDomainsService } from "./domains/admin-domains.service.js";
 import { AdminSessionService } from "./session/admin-session.service.js";
@@ -47,6 +48,7 @@ import { AdminUsersService } from "./users/admin-users.service.js";
     AdminBansRepository,
     AdminApiTokensRepository,
     AdminUsersRepository,
+    AdminCreationNotificationService,
     AdminNotificationService,
     AdminSessionService,
     AdminDomainsService,

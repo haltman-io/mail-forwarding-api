@@ -74,10 +74,12 @@ describe("Admin delete services", () => {
       adminAliasesRepository as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const handlesService = new AdminHandlesService(
       {} as never,
       adminHandlesRepository as never,
+      {} as never,
       {} as never,
     );
 
