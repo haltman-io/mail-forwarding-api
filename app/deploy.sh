@@ -1,16 +1,24 @@
 #!/bin/bash
 
-## Pull
+set -euo pipefail
+
+APP_NAME="mail-forwarding-api"
+
+## Pull latest code
 git pull --force
 
-## PM2 Delete
-pm2 delete mail-forwarding-api
+## Build before touching the running PM2 process
+npm run build
 
-## PM2 Start
-pm2 start ecosystem.config.cjs
+## Reload in place when the app already exists; otherwise start it
+if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  pm2 reload ecosystem.config.cjs --only "$APP_NAME" --env production
+else
+  pm2 start ecosystem.config.cjs --only "$APP_NAME" --env production
+fi
 
-## PM2 Save
+## Persist PM2 process list
 pm2 save
 
 ## Join logs automatically
-pm2 logs mail-forwarding-api
+pm2 logs "$APP_NAME"

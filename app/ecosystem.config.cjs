@@ -1,9 +1,4 @@
 const path = require('path');
-const { execSync } = require('child_process');
-
-console.log('[ecosystem] Running npm run build...');
-execSync('npm run build', { cwd: __dirname, stdio: 'inherit' });
-console.log('[ecosystem] Build finished.');
 
 module.exports = {
     apps: [
