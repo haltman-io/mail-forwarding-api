@@ -10,7 +10,7 @@ import { ConfigService } from "@nestjs/config";
 
 import { ForwardCounterRepository } from "./forward-counter.repository.js";
 
-@Controller("api/counter")
+@Controller("counter")
 export class ForwardCounterController {
   private readonly secretKey: string;
 
