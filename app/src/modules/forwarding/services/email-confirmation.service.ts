@@ -31,6 +31,8 @@ interface ForwardingSettings {
   emailSubject: string;
   emailSubjectSubscribe: string;
   emailSubjectUnsubscribe: string;
+  emailSubjectHandleSubscribe: string;
+  emailSubjectHandleUnsubscribe: string;
 }
 
 export interface SendConfirmationResult {
@@ -56,6 +58,7 @@ export class EmailConfirmationService {
     aliasDomain: string;
     aliasDisplay?: string;
     intent?: string;
+    confirmEndpoint?: string;
     requestOrigin?: string;
     requestReferer?: string;
   }): Promise<SendConfirmationResult> {
@@ -125,7 +128,7 @@ export class EmailConfirmationService {
     const confirmUrl = this.buildConfirmUrl(
       token,
       confirmBaseUrl,
-      forwardingSettings.confirmEndpoint,
+      payload.confirmEndpoint || forwardingSettings.confirmEndpoint,
     );
 
     const smtpSettings = this.configService.getOrThrow<SmtpSettings>("smtp");
@@ -134,8 +137,15 @@ export class EmailConfirmationService {
 
     const tenantFqdn = this.extractHostname(confirmBaseUrl);
 
-    const subjectTemplate =
-      intentNormalized === "unsubscribe"
+    const subjectTemplate = intentNormalized.startsWith("handle_")
+      ? intentNormalized === "handle_unsubscribe"
+        ? forwardingSettings.emailSubjectHandleUnsubscribe ||
+          forwardingSettings.emailSubject ||
+          "handle:delete"
+        : forwardingSettings.emailSubjectHandleSubscribe ||
+          forwardingSettings.emailSubject ||
+          "handle:create"
+      : intentNormalized === "unsubscribe"
         ? forwardingSettings.emailSubjectUnsubscribe || forwardingSettings.emailSubject
         : forwardingSettings.emailSubjectSubscribe ||
           forwardingSettings.emailSubject ||

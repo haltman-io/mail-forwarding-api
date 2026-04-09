@@ -95,6 +95,7 @@ export class HandleService {
       aliasDomain: HANDLE_DOMAIN_SENTINEL,
       aliasDisplay: handle,
       intent: "handle_subscribe",
+      confirmEndpoint: "/api/handle/confirm",
       requestOrigin: params.origin,
       requestReferer: params.referer,
     });
@@ -140,6 +141,7 @@ export class HandleService {
       aliasDomain: HANDLE_DOMAIN_SENTINEL,
       aliasDisplay: handle,
       intent: "handle_unsubscribe",
+      confirmEndpoint: "/api/handle/confirm",
       requestOrigin: params.origin,
       requestReferer: params.referer,
     });
@@ -190,6 +192,7 @@ export class HandleService {
       aliasDomain: domain,
       aliasDisplay: `${handle} @ ${domain}`,
       intent: "handle_domain_disable",
+      confirmEndpoint: "/api/handle/confirm",
       requestOrigin: params.origin,
       requestReferer: params.referer,
     });
@@ -241,6 +244,7 @@ export class HandleService {
       aliasDomain: domain,
       aliasDisplay: `${handle} @ ${domain}`,
       intent: "handle_domain_enable",
+      confirmEndpoint: "/api/handle/confirm",
       requestOrigin: params.origin,
       requestReferer: params.referer,
     });

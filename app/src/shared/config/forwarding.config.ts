@@ -9,4 +9,6 @@ export const forwardingConfig = registerAs("forwarding", () => ({
   emailSubject: getString("EMAIL_CONFIRMATION_SUBJECT", ""),
   emailSubjectSubscribe: getString("EMAIL_CONFIRMATION_SUBJECT_SUBSCRIBE", ""),
   emailSubjectUnsubscribe: getString("EMAIL_CONFIRMATION_SUBJECT_UNSUBSCRIBE", ""),
+  emailSubjectHandleSubscribe: getString("EMAIL_CONFIRMATION_SUBJECT_HANDLE_SUBSCRIBE", ""),
+  emailSubjectHandleUnsubscribe: getString("EMAIL_CONFIRMATION_SUBJECT_HANDLE_UNSUBSCRIBE", ""),
 }));
