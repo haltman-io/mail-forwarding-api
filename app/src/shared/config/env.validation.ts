@@ -48,6 +48,7 @@ export function validateEnv(environment: Record<string, unknown>): Record<string
   requireNonEmpty("CHECKDNS_BASE_URL");
   requireNonEmpty("CHECKDNS_TOKEN");
   requireNonEmpty("AUTH_CSRF_SECRET");
+  requireNonEmpty("COUNTER_SECRET_KEY");
   requireNonEmpty("JWT_ACCESS_PRIVATE_KEY");
   requireNonEmpty("JWT_ACCESS_KID");
   requireNonEmpty("JWT_ACCESS_VERIFY_KEYS");

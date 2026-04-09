@@ -18,6 +18,7 @@ import {
   appConfig,
   authConfig,
   checkDnsConfig,
+  counterConfig,
   corsConfig,
   databaseConfig,
   forwardingConfig,
@@ -38,7 +39,7 @@ import { RouteRateLimitMiddleware } from "./shared/security/rate-limit/route-rat
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      load: [apiCredentialsConfig, adminConfig, appConfig, authConfig, corsConfig, databaseConfig, checkDnsConfig, forwardingConfig, rateLimitConfig, redisConfig, smtpConfig],
+      load: [apiCredentialsConfig, adminConfig, appConfig, authConfig, counterConfig, corsConfig, databaseConfig, checkDnsConfig, forwardingConfig, rateLimitConfig, redisConfig, smtpConfig],
       validate: validateEnv,
     }),
     InfrastructureModule,

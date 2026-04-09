@@ -12,7 +12,7 @@ export class StatsController {
     const result = await this.statsService.getStats();
 
     if (!result.fromCache) {
-      response.set("Cache-Control", "public, max-age=60");
+      response.set("Cache-Control", "public, max-age=120");
     }
 
     response.json(result.data);

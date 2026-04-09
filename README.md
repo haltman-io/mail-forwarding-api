@@ -83,7 +83,7 @@ app/
 │   │   ├── domains/                        # Active domain listing (cached)
 │   │   ├── bans/                           # Ban policy evaluation
 │   │   ├── check-dns/                      # DNS verification relay
-│   │   └── stats/                          # Alias metrics
+│   │   └── stats/                          # Alias metrics and forward counter
 │   └── shared/
 │       ├── infrastructure.module.ts        # Global providers
 │       ├── config/                         # Typed config factories, env validation
@@ -177,6 +177,7 @@ These must be set for the application to start:
 | `CHECKDNS_BASE_URL` | Base URL of the external DNS check service |
 | `CHECKDNS_TOKEN` | Auth token for the DNS check service |
 | `AUTH_CSRF_SECRET` | Secret for CSRF token generation (HMAC-SHA256) |
+| `COUNTER_SECRET_KEY` | Secret key for the forward counter increment endpoint (generate with `openssl rand -hex 32`) |
 | `JWT_ACCESS_PRIVATE_KEY` | Ed25519 private key (PEM) for signing access tokens |
 | `JWT_ACCESS_KID` | Key ID for the active signing key |
 | `JWT_ACCESS_VERIFY_KEYS` | JSON object of key IDs to public keys for verification |
@@ -194,7 +195,8 @@ See `.env.example` for the full list of optional variables including rate-limit 
 | Credentials | `/api/credentials` | Create and confirm API keys via email verification |
 | Check DNS | `/api/request`, `/api/checkdns` | Relay DNS verification requests to external service |
 | Domains | `/api/domains` | List active mail domains (10s cache) |
-| Stats | `/api/stats` | Alias metrics (60s cache) |
+| Stats | `/api/stats` | Alias and forwarding metrics (120s cache) |
+| Counter | `/api/counter/increment` | Increment forwarded email counter (secret key required) |
 
 ### API Key-Authenticated Endpoints
 

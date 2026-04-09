@@ -3,6 +3,7 @@ export { adminConfig } from "./admin.config.js";
 export { appConfig } from "./app.config.js";
 export { authConfig } from "./auth.config.js";
 export { checkDnsConfig } from "./check-dns.config.js";
+export { counterConfig } from "./counter.config.js";
 export { corsConfig } from "./cors.config.js";
 export { databaseConfig } from "./database.config.js";
 export { forwardingConfig } from "./forwarding.config.js";
