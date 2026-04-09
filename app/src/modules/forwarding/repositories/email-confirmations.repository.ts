@@ -176,6 +176,15 @@ export class EmailConfirmationsRepository {
         [normalizedAliasName, normalizedAliasDomain, ...conflictingIntents],
       );
 
+      await conn.query(
+        `UPDATE email_confirmations
+         SET status = 'expired'
+         WHERE email = ?
+           AND status = 'pending'
+           AND expires_at > NOW(6)`,
+        [email],
+      );
+
       const result: InsertResult = await conn.query(
         `INSERT INTO email_confirmations (
             email, token_hash, status, created_at, expires_at,
