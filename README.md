@@ -279,6 +279,8 @@ Handles allow a user to reserve a local-part (e.g. `jose`) that routes `jose@any
 - **Public flow.** Uses the same email confirmation pattern as alias forwarding: the user requests via `GET /api/handle/subscribe`, receives a 6-digit token by email, and confirms via `GET /api/handle/confirm?token=...`. Unsubscribe and domain disable/enable follow the same confirmation flow.
 - **Authenticated flow.** API key holders can create, delete, and manage domain rules immediately via `POST /api/handle/create`, `POST /api/handle/delete`, `POST /api/handle/domain/disable`, and `POST /api/handle/domain/enable`.
 
+Handle confirmation emails use separate subject templates from alias emails, configurable via `EMAIL_CONFIRMATION_SUBJECT_HANDLE_SUBSCRIBE` (default: `handle:create`) and `EMAIL_CONFIRMATION_SUBJECT_HANDLE_UNSUBSCRIBE` (default: `handle:delete`). Domain disable/enable emails use the subscribe template.
+
 Handle rate limiting mirrors the alias forwarding limits (progressive delay, per-IP, per-handle, and per-destination caps) and shares the cross-endpoint cycle counter with alias operations.
 
 ## Development Notes
