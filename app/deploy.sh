@@ -11,3 +11,6 @@ pm2 start ecosystem.config.cjs
 
 ## PM2 Save
 pm2 save
+
+## Join logs automatically
+pm2 logs mail-forwarding-api
