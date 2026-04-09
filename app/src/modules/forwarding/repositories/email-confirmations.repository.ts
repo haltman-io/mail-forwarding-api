@@ -57,6 +57,7 @@ function assertAliasName(name: unknown): string {
 function assertDomain(domain: unknown): string {
   if (typeof domain !== "string") throw new Error("invalid_alias_domain");
   const value = normalizeLowerTrim(domain);
+  if (value === "__handle__") return value;
   if (!isValidDomain(value)) throw new Error("invalid_alias_domain");
   return value;
 }
@@ -90,7 +91,8 @@ function normalizePendingEmail(email: unknown): string {
   return value;
 }
 
-function confirmationIntentGroup(intent: string): "create" | "unsubscribe" {
+function confirmationIntentGroup(intent: string): "create" | "unsubscribe" | "handle" {
+  if (intent.startsWith("handle_")) return "handle";
   return intent === "unsubscribe" ? "unsubscribe" : "create";
 }
 
@@ -157,9 +159,11 @@ export class EmailConfirmationsRepository {
       );
 
       const conflictingIntents =
-        intentGroup === "unsubscribe"
-          ? ["unsubscribe"]
-          : ["subscribe", "subscribe_address"];
+        intentGroup === "handle"
+          ? [normalizedIntent]
+          : intentGroup === "unsubscribe"
+            ? ["unsubscribe"]
+            : ["subscribe", "subscribe_address"];
 
       await conn.query(
         `UPDATE email_confirmations

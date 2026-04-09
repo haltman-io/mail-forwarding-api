@@ -88,3 +88,13 @@ export function normalizeBodyToken(req: Request): string {
   const body = req.body as Record<string, unknown> | undefined;
   return normalizeString(body?.token ?? "");
 }
+
+export function normalizeGetHandle(req: Request): string {
+  const query = req.query as Record<string, unknown> | undefined;
+  return normalizeString(query?.handle ?? "");
+}
+
+export function normalizeBodyHandle(req: Request): string {
+  const body = req.body as Record<string, unknown> | undefined;
+  return normalizeString(body?.handle ?? "");
+}

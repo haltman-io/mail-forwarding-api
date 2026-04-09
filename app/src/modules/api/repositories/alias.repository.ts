@@ -191,6 +191,23 @@ export class AliasRepository {
       `SELECT 1 AS ok
        FROM alias_handle
        WHERE handle = ?
+       LIMIT 1`,
+      [normalized],
+    );
+
+    return rows.length === 1;
+  }
+
+  async existsByLocalPart(localPart: string, connection?: PoolConnection): Promise<boolean> {
+    const normalized = String(localPart || "").trim().toLowerCase();
+    if (!normalized) return false;
+
+    const executor = connection ?? this.database;
+    const rows = await runQuery<ExistsRow[]>(
+      executor,
+      `SELECT 1 AS ok
+       FROM alias
+       WHERE SUBSTRING_INDEX(address, '@', 1) = ?
          AND active = 1
        LIMIT 1`,
       [normalized],

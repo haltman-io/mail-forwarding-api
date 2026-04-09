@@ -15,6 +15,7 @@ import {
   normalizeCredentialEmail,
   normalizeGetAddress,
   normalizeGetDomain,
+  normalizeGetHandle,
   normalizeGetName,
   normalizeGetTo,
   normalizeGetToken,
@@ -58,6 +59,24 @@ type RateLimitSettings = {
   aliasListPerMinPerKey: number;
   aliasCreatePerMinPerKey: number;
   aliasDeletePerMinPerKey: number;
+  handleSubscribeSlowDelayAfter: number;
+  handleSubscribeSlowDelayStepMs: number;
+  handleSubscribePer10MinPerIp: number;
+  handleSubscribePerHourPerTo: number;
+  handleSubscribePerHourPerHandle: number;
+  handleUnsubscribeSlowDelayAfter: number;
+  handleUnsubscribeSlowDelayStepMs: number;
+  handleUnsubscribePer10MinPerIp: number;
+  handleUnsubscribePerHourPerHandle: number;
+  handleConfirmPer10MinPerIp: number;
+  handleConfirmPer10MinPerToken: number;
+  handleDomainSlowDelayAfter: number;
+  handleDomainSlowDelayStepMs: number;
+  handleDomainPer10MinPerIp: number;
+  handleDomainPerHourPerHandle: number;
+  handleApiCreatePerMinPerKey: number;
+  handleApiDeletePerMinPerKey: number;
+  handleApiDomainPerMinPerKey: number;
 };
 
 type CounterState = {
@@ -537,6 +556,170 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       return [this.globalLimitRule(), this.aliasLimitRule("alias_delete_key", this.settings.aliasDeletePerMinPerKey, "alias_delete")];
     }
 
+    if (method === "GET" && path === "/api/handle/subscribe") {
+      return [
+        this.globalLimitRule(),
+        this.forwardingCycleIpRule("handle_subscribe"),
+        {
+          kind: "delay",
+          name: "handle_sub_slow_ip",
+          windowMs: 60_000,
+          delayAfter: this.settings.handleSubscribeSlowDelayAfter,
+          delayMs: (hits) =>
+            Math.max(
+              0,
+              (hits - this.settings.handleSubscribeSlowDelayAfter) *
+                this.settings.handleSubscribeSlowDelayStepMs,
+            ),
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_sub_ip",
+          windowMs: 10 * 60_000,
+          limit: this.settings.handleSubscribePer10MinPerIp,
+          message: {
+            error: "rate_limited",
+            where: "handle_subscribe",
+            reason: "too_many_requests_ip",
+          },
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_sub_to",
+          windowMs: 60 * 60_000,
+          limit: this.settings.handleSubscribePerHourPerTo,
+          message: {
+            error: "rate_limited",
+            where: "handle_subscribe",
+            reason: "too_many_requests_to",
+          },
+          key: (request) => `handle_to:${normalizeGetTo(request) || "missing"}`,
+        },
+        {
+          kind: "limit",
+          name: "handle_sub_handle",
+          windowMs: 60 * 60_000,
+          limit: this.settings.handleSubscribePerHourPerHandle,
+          message: {
+            error: "rate_limited",
+            where: "handle_subscribe",
+            reason: "too_many_requests_handle",
+          },
+          key: (request) => `handle_sub:${normalizeGetHandle(request) || "missing"}`,
+        },
+      ];
+    }
+
+    if (method === "GET" && path === "/api/handle/unsubscribe") {
+      return [
+        this.globalLimitRule(),
+        {
+          kind: "delay",
+          name: "handle_unsub_slow_ip",
+          windowMs: 60_000,
+          delayAfter: this.settings.handleUnsubscribeSlowDelayAfter,
+          delayMs: (hits) =>
+            Math.max(
+              0,
+              (hits - this.settings.handleUnsubscribeSlowDelayAfter) *
+                this.settings.handleUnsubscribeSlowDelayStepMs,
+            ),
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_unsub_ip",
+          windowMs: 10 * 60_000,
+          limit: this.settings.handleUnsubscribePer10MinPerIp,
+          message: {
+            error: "rate_limited",
+            where: "handle_unsubscribe",
+            reason: "too_many_requests_ip",
+          },
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_unsub_handle",
+          windowMs: 60 * 60_000,
+          limit: this.settings.handleUnsubscribePerHourPerHandle,
+          message: {
+            error: "rate_limited",
+            where: "handle_unsubscribe",
+            reason: "too_many_requests_handle",
+          },
+          key: (request) => `handle_unsub:${normalizeGetHandle(request) || "missing"}`,
+        },
+      ];
+    }
+
+    if (
+      method === "GET" &&
+      (path === "/api/handle/domain/disable" || path === "/api/handle/domain/enable")
+    ) {
+      return [
+        this.globalLimitRule(),
+        {
+          kind: "delay",
+          name: "handle_domain_slow_ip",
+          windowMs: 60_000,
+          delayAfter: this.settings.handleDomainSlowDelayAfter,
+          delayMs: (hits) =>
+            Math.max(
+              0,
+              (hits - this.settings.handleDomainSlowDelayAfter) *
+                this.settings.handleDomainSlowDelayStepMs,
+            ),
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_domain_ip",
+          windowMs: 10 * 60_000,
+          limit: this.settings.handleDomainPer10MinPerIp,
+          message: {
+            error: "rate_limited",
+            where: "handle_domain",
+            reason: "too_many_requests_ip",
+          },
+          key: keyByIp,
+        },
+        {
+          kind: "limit",
+          name: "handle_domain_handle",
+          windowMs: 60 * 60_000,
+          limit: this.settings.handleDomainPerHourPerHandle,
+          message: {
+            error: "rate_limited",
+            where: "handle_domain",
+            reason: "too_many_requests_handle",
+          },
+          key: (request) => `handle_domain:${normalizeGetHandle(request) || "missing"}`,
+        },
+      ];
+    }
+
+    if (this.isHandleConfirmPath(path) && (method === "GET" || method === "POST")) {
+      return this.handleConfirmRules(method === "GET" ? normalizeGetToken : normalizeBodyToken);
+    }
+
+    if (method === "POST" && path === "/api/handle/create") {
+      return [this.globalLimitRule(), this.handleApiLimitRule("handle_create_key", this.settings.handleApiCreatePerMinPerKey, "handle_create")];
+    }
+
+    if (method === "POST" && path === "/api/handle/delete") {
+      return [this.globalLimitRule(), this.handleApiLimitRule("handle_delete_key", this.settings.handleApiDeletePerMinPerKey, "handle_delete")];
+    }
+
+    if (
+      method === "POST" &&
+      (path === "/api/handle/domain/disable" || path === "/api/handle/domain/enable")
+    ) {
+      return [this.globalLimitRule(), this.handleApiLimitRule("handle_domain_key", this.settings.handleApiDomainPerMinPerKey, "handle_domain")];
+    }
+
     return [];
   }
 
@@ -630,6 +813,81 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
         key: (request) => `token:${tokenResolver(request) || "missing"}`,
       },
     ];
+  }
+
+  private isHandleConfirmPath(path: string): boolean {
+    return (
+      path === "/api/handle/confirm" ||
+      path === "/api/handle/unsubscribe/confirm" ||
+      path === "/api/handle/domain/disable/confirm" ||
+      path === "/api/handle/domain/enable/confirm"
+    );
+  }
+
+  private handleConfirmRules(tokenResolver: (request: Request) => string): Rule[] {
+    return [
+      this.globalLimitRule(),
+      this.forwardingCycleIpRule("handle_confirm"),
+      {
+        kind: "delay",
+        name: "handle_confirm_slow_ip",
+        windowMs: 60_000,
+        delayAfter: this.settings.confirmSlowDelayAfter,
+        delayMs: (hits) =>
+          Math.max(
+            0,
+            (hits - this.settings.confirmSlowDelayAfter) *
+              this.settings.confirmSlowDelayStepMs,
+          ),
+        key: keyByIp,
+      },
+      {
+        kind: "limit",
+        name: "handle_confirm_ip",
+        windowMs: 10 * 60_000,
+        limit: this.settings.handleConfirmPer10MinPerIp,
+        message: {
+          error: "rate_limited",
+          where: "handle_confirm",
+          reason: "too_many_requests_ip",
+        },
+        key: keyByIp,
+      },
+      {
+        kind: "limit",
+        name: "handle_confirm_token",
+        windowMs: 10 * 60_000,
+        limit: this.settings.handleConfirmPer10MinPerToken,
+        message: {
+          error: "rate_limited",
+          where: "handle_confirm",
+          reason: "too_many_requests_token",
+        },
+        key: (request) => `handle_token:${tokenResolver(request) || "missing"}`,
+      },
+    ];
+  }
+
+  private handleApiLimitRule(
+    name: string,
+    limit: number,
+    where: string,
+  ): LimitRule {
+    return {
+      kind: "limit",
+      name,
+      windowMs: 60_000,
+      limit,
+      message: {
+        error: "rate_limited",
+        where,
+        reason: "too_many_requests_key",
+      },
+      key: (request) => {
+        const key = normalizeApiKey(request);
+        return key ? `${where}:${key.slice(0, 64)}` : "";
+      },
+    };
   }
 
   private credentialsConfirmRules(tokenResolver: (request: Request) => string): Rule[] {

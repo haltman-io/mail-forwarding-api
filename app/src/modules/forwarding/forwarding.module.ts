@@ -12,5 +12,6 @@ import { ForwardingService } from "./services/forwarding.service.js";
   imports: [BansModule, DomainsModule, AliasRepositoryModule],
   controllers: [ForwardingController],
   providers: [EmailConfirmationsRepository, EmailConfirmationService, ForwardingService],
+  exports: [EmailConfirmationService, EmailConfirmationsRepository],
 })
 export class ForwardingModule {}

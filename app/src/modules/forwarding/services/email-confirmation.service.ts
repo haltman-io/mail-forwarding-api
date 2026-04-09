@@ -54,6 +54,7 @@ export class EmailConfirmationService {
     userAgent: string;
     aliasName: string;
     aliasDomain: string;
+    aliasDisplay?: string;
     intent?: string;
     requestOrigin?: string;
     requestReferer?: string;
@@ -146,19 +147,37 @@ export class EmailConfirmationService {
       code: token,
     });
 
-    const actionLabel = intentNormalized === "unsubscribe" ? "DEACTIVATE" : "CREATE";
+    const displayName = payload.aliasDisplay ?? `${payload.aliasName}@${payload.aliasDomain}`;
+
+    const actionLabel =
+      intentNormalized === "unsubscribe" || intentNormalized === "handle_unsubscribe"
+        ? "DEACTIVATE"
+        : intentNormalized === "handle_domain_disable"
+          ? "DISABLE DOMAIN"
+          : intentNormalized === "handle_domain_enable"
+            ? "ENABLE DOMAIN"
+            : "CREATE";
+
     const actionSql =
       intentNormalized === "unsubscribe"
         ? `UPDATE alias SET goto='${PERMANENT_ALIAS_GOTO}', active=0, modified=CURRENT_TIMESTAMP() WHERE address='${payload.aliasName}@${payload.aliasDomain}' LIMIT 1;`
-        : `INSERT INTO alias (address, goto, active, created, modified) VALUES ('${payload.aliasName}@${payload.aliasDomain}', '${to}', 1, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());`;
+        : intentNormalized === "handle_subscribe"
+          ? `INSERT INTO alias_handle (handle, address, active) VALUES ('${payload.aliasName}', '${to}', 1);`
+          : intentNormalized === "handle_unsubscribe"
+            ? `UPDATE alias_handle SET address=NULL, active=0, unsubscribed_at=CURRENT_TIMESTAMP() WHERE handle='${payload.aliasName}' LIMIT 1;`
+            : intentNormalized === "handle_domain_disable"
+              ? `INSERT INTO alias_handle_disabled_domain (handle_id, domain, active) VALUES (?, '${payload.aliasDomain}', 1) ON DUPLICATE KEY UPDATE active=1;`
+              : intentNormalized === "handle_domain_enable"
+                ? `UPDATE alias_handle_disabled_domain SET active=0 WHERE handle_id=? AND domain='${payload.aliasDomain}' LIMIT 1;`
+                : `INSERT INTO alias (address, goto, active, created, modified) VALUES ('${payload.aliasName}@${payload.aliasDomain}', '${to}', 1, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());`;
 
     const text = this.buildPlainText(
       token,
       ttlMinutes,
       actionLabel,
       actionSql,
-      payload.aliasName,
-      payload.aliasDomain,
+      displayName,
+      "",
       confirmUrl,
     );
     const html = this.buildHtml(tenantFqdn, token, ttlMinutes, actionSql, confirmUrl);
@@ -259,7 +278,7 @@ export class EmailConfirmationService {
       `ACTION\n` +
       `${actionLabel.toUpperCase()}\n\n` +
       `ALIAS\n` +
-      `${aliasName}@${aliasDomain}\n\n` +
+      `${aliasDomain ? `${aliasName}@${aliasDomain}` : aliasName}\n\n` +
       `CONFIRM LINK\n` +
       `${confirmUrl}\n\n` +
       `IGNORE IF THIS WASN'T YOU.\n` +

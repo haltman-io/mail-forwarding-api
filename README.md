@@ -5,7 +5,8 @@ REST API for managing email aliases, forwarding rules, and API credentials. Buil
 ## Features
 
 - Email alias creation, forwarding, and deactivation with email confirmation
-- API key authentication for programmatic alias management
+- Handle claiming: reserve a local-part across all managed domains with permanent ownership
+- API key authentication for programmatic alias and handle management
 - Admin panel API with full CRUD for aliases, domains, handles, bans, API tokens, DNS requests, and users
 - Admin ban creation can optionally disable matching active aliases for `email`, `domain`, and `name` bans
 - JWT-based admin authentication (EdDSA/Ed25519) with session families and refresh token rotation
@@ -76,6 +77,9 @@ app/
 │   │   │   ├── services/                   # Subscribe/unsubscribe, email confirmation
 │   │   │   ├── repositories/               # Confirmation state tracking
 │   │   │   └── dto/                        # Confirm body DTO
+│   │   ├── handle/                         # Handle claiming and management
+│   │   │   ├── services/                   # Public (confirmation) and API-key flows
+│   │   │   └── repositories/               # Handle and disabled-domain persistence
 │   │   ├── domains/                        # Active domain listing (cached)
 │   │   ├── bans/                           # Ban policy evaluation
 │   │   ├── check-dns/                      # DNS verification relay
@@ -186,6 +190,7 @@ See `.env.example` for the full list of optional variables including rate-limit 
 | Module | Prefix | Purpose |
 |---|---|---|
 | Forwarding | `/api/forward` | Subscribe/unsubscribe email aliases with confirmation flow |
+| Handle | `/api/handle` | Claim, unsubscribe, and manage domain rules for handles with confirmation flow |
 | Credentials | `/api/credentials` | Create and confirm API keys via email verification |
 | Check DNS | `/api/request`, `/api/checkdns` | Relay DNS verification requests to external service |
 | Domains | `/api/domains` | List active mail domains (10s cache) |
@@ -196,9 +201,10 @@ See `.env.example` for the full list of optional variables including rate-limit 
 | Prefix | Purpose |
 |---|---|
 | `/api/alias` | List, create, and deactivate aliases owned by the key holder |
+| `/api/handle` | Create, delete handles, and disable/enable domains for handles owned by the key holder |
 | `/api/activity` | View activity log for the key holder |
 
-Authenticated via `Authorization` header with an API key (64-char hex string, stored as SHA256 hash).
+Authenticated via `X-API-Key` header with an API key (64-char hex string, stored as SHA256 hash).
 
 ### Admin Endpoints
 
@@ -241,9 +247,9 @@ Counters are stored in Redis when available, falling back to in-memory storage. 
 
 ### Cross-endpoint cycle limiting
 
-The forwarding endpoints (`/api/forward/subscribe` and `/api/forward/confirm`) share a single rate-limit counter (`fwd_cycle_ip`) bucketed by IP address. This counter increments on both subscribe and confirm requests, preventing automated loops that create aliases in rapid succession by cycling between the two endpoints with unique parameters on each call.
+The forwarding endpoints (`/api/forward/subscribe` and `/api/forward/confirm`) share a single rate-limit counter (`fwd_cycle_ip`) bucketed by IP address. This counter increments on both subscribe and confirm requests, preventing automated loops that create aliases in rapid succession by cycling between the two endpoints with unique parameters on each call. Handle subscribe and confirm endpoints share the same counter, so the budget is consumed across both alias and handle operations.
 
-Each alias creation cycle (one subscribe + one confirm) consumes 2 hits from this shared bucket. The limit is configured via `RL_FORWARDING_CYCLE_PER_HOUR_PER_IP` (default: 10, allowing up to 5 aliases per hour per IP).
+Each alias or handle creation cycle (one subscribe + one confirm) consumes 2 hits from this shared bucket. The limit is configured via `RL_FORWARDING_CYCLE_PER_HOUR_PER_IP` (default: 10, allowing up to 5 operations per hour per IP).
 
 ### Confirm endpoint delay
 
@@ -260,6 +266,20 @@ All rate-limit thresholds are configurable via environment variables. See `.env.
 | `SD_CONFIRM_DELAY_STEP_MS` | `500` | Delay increment (ms) per confirm request above threshold |
 | `RL_SUBSCRIBE_PER_10MIN_PER_IP` | `60` | Subscribe hard limit per IP per 10 minutes |
 | `RL_CONFIRM_PER_10MIN_PER_IP` | `120` | Confirm hard limit per IP per 10 minutes |
+| `RL_HANDLE_SUBSCRIBE_PER_10MIN_PER_IP` | `60` | Handle subscribe hard limit per IP per 10 minutes |
+| `RL_HANDLE_CONFIRM_PER_10MIN_PER_IP` | `120` | Handle confirm hard limit per IP per 10 minutes |
+
+## Handle Claiming
+
+Handles allow a user to reserve a local-part (e.g. `jose`) that routes `jose@any-managed-domain` to a single real destination address. Key behaviors:
+
+- **Permanent reservation.** A handle name can never be reused, even after unsubscribe. The row is kept with `active = 0` and `unsubscribed_at` set.
+- **Collision prevention.** A handle cannot be claimed if any existing alias already uses the same local-part, and vice-versa. Both cases return the generic `alias_taken` error to avoid information leakage.
+- **Domain disable/enable.** The handle owner can block specific domains so that `handle@blocked-domain` is rejected at the SMTP level, while other domains continue routing normally.
+- **Public flow.** Uses the same email confirmation pattern as alias forwarding: the user requests via `GET /api/handle/subscribe`, receives a 6-digit token by email, and confirms via `GET /api/handle/confirm?token=...`. Unsubscribe and domain disable/enable follow the same confirmation flow.
+- **Authenticated flow.** API key holders can create, delete, and manage domain rules immediately via `POST /api/handle/create`, `POST /api/handle/delete`, `POST /api/handle/domain/disable`, and `POST /api/handle/domain/enable`.
+
+Handle rate limiting mirrors the alias forwarding limits (progressive delay, per-IP, per-handle, and per-destination caps) and shares the cross-endpoint cycle counter with alias operations.
 
 ## Development Notes
 

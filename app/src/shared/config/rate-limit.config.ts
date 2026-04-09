@@ -59,4 +59,27 @@ export const rateLimitConfig = registerAs("rateLimit", () => ({
   aliasListPerMinPerKey: getInt("RL_ALIAS_LIST_PER_MIN_PER_KEY", 600),
   aliasCreatePerMinPerKey: getInt("RL_ALIAS_CREATE_PER_MIN_PER_KEY", 120),
   aliasDeletePerMinPerKey: getInt("RL_ALIAS_DELETE_PER_MIN_PER_KEY", 120),
+
+  handleSubscribeSlowDelayAfter: getInt("SD_HANDLE_SUBSCRIBE_DELAY_AFTER", 10),
+  handleSubscribeSlowDelayStepMs: getInt("SD_HANDLE_SUBSCRIBE_DELAY_STEP_MS", 250),
+  handleSubscribePer10MinPerIp: getInt("RL_HANDLE_SUBSCRIBE_PER_10MIN_PER_IP", 60),
+  handleSubscribePerHourPerTo: getInt("RL_HANDLE_SUBSCRIBE_PER_HOUR_PER_TO", 6),
+  handleSubscribePerHourPerHandle: getInt("RL_HANDLE_SUBSCRIBE_PER_HOUR_PER_HANDLE", 20),
+
+  handleUnsubscribeSlowDelayAfter: getInt("SD_HANDLE_UNSUBSCRIBE_DELAY_AFTER", 8),
+  handleUnsubscribeSlowDelayStepMs: getInt("SD_HANDLE_UNSUBSCRIBE_DELAY_STEP_MS", 300),
+  handleUnsubscribePer10MinPerIp: getInt("RL_HANDLE_UNSUBSCRIBE_PER_10MIN_PER_IP", 40),
+  handleUnsubscribePerHourPerHandle: getInt("RL_HANDLE_UNSUBSCRIBE_PER_HOUR_PER_HANDLE", 6),
+
+  handleConfirmPer10MinPerIp: getInt("RL_HANDLE_CONFIRM_PER_10MIN_PER_IP", 120),
+  handleConfirmPer10MinPerToken: getInt("RL_HANDLE_CONFIRM_PER_10MIN_PER_TOKEN", 10),
+
+  handleDomainSlowDelayAfter: getInt("SD_HANDLE_DOMAIN_DELAY_AFTER", 8),
+  handleDomainSlowDelayStepMs: getInt("SD_HANDLE_DOMAIN_DELAY_STEP_MS", 300),
+  handleDomainPer10MinPerIp: getInt("RL_HANDLE_DOMAIN_PER_10MIN_PER_IP", 40),
+  handleDomainPerHourPerHandle: getInt("RL_HANDLE_DOMAIN_PER_HOUR_PER_HANDLE", 10),
+
+  handleApiCreatePerMinPerKey: getInt("RL_HANDLE_API_CREATE_PER_MIN_PER_KEY", 120),
+  handleApiDeletePerMinPerKey: getInt("RL_HANDLE_API_DELETE_PER_MIN_PER_KEY", 120),
+  handleApiDomainPerMinPerKey: getInt("RL_HANDLE_API_DOMAIN_PER_MIN_PER_KEY", 120),
 }));

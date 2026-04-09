@@ -10,6 +10,7 @@ import { BansModule } from "./modules/bans/bans.module.js";
 import { CheckDnsModule } from "./modules/check-dns/check-dns.module.js";
 import { DomainsModule } from "./modules/domains/domains.module.js";
 import { ForwardingModule } from "./modules/forwarding/forwarding.module.js";
+import { HandleModule } from "./modules/handle/handle.module.js";
 import { StatsModule } from "./modules/stats/stats.module.js";
 import {
   apiCredentialsConfig,
@@ -49,6 +50,7 @@ import { RouteRateLimitMiddleware } from "./shared/security/rate-limit/route-rat
     BansModule,
     DomainsModule,
     ForwardingModule,
+    HandleModule,
     StatsModule,
     CheckDnsModule,
   ],
