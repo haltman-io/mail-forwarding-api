@@ -4,6 +4,7 @@ import { getInt, getString } from "./env.utils.js";
 
 export const rateLimitConfig = registerAs("rateLimit", () => ({
   redisPrefix: getString("REDIS_RATE_LIMIT_PREFIX", "rl:").trim() || "rl:",
+  botAuthToken: getString("BOT_AUTH_TOKEN", "").trim(),
   globalPerMin: getInt("RL_GLOBAL_PER_MIN", 300),
 
   subscribeSlowDelayAfter: getInt("SD_SUBSCRIBE_DELAY_AFTER", 10),

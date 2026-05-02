@@ -7,10 +7,13 @@ describe("RouteRateLimitMiddleware", () => {
   const token =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-  function createMiddleware(overrides: Partial<{ globalPerMin: number }> = {}) {
+  function createMiddleware(
+    overrides: Partial<{ botAuthToken: string; globalPerMin: number }> = {},
+  ) {
     const configService = {
       getOrThrow: jest.fn().mockReturnValue({
         redisPrefix: "rl:",
+        botAuthToken: overrides.botAuthToken ?? "",
         globalPerMin: overrides.globalPerMin ?? 100,
         subscribeSlowDelayAfter: 100,
         subscribeSlowDelayStepMs: 1,
@@ -270,5 +273,123 @@ describe("RouteRateLimitMiddleware", () => {
     expect(secondNext).not.toHaveBeenCalled();
     expect(secondRes.statusCode).toBe(429);
     expect(secondRes.body).toBe("Too many requests, please try again later.");
+  });
+
+  it("uses authorized bot source instead of request IP for origin limits", async () => {
+    const middleware = createMiddleware({
+      botAuthToken: "bot-secret",
+      globalPerMin: 1,
+    });
+
+    const firstReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "203.0.113.100",
+      headers: {
+        "X-Bot-Auth-Token": "bot-secret",
+        "X-Bot-Source": "telegram-user-42",
+      },
+    });
+    const firstRes = createMockResponse();
+    const firstNext = jest.fn();
+
+    await middleware.use(firstReq, firstRes, firstNext);
+
+    const secondReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "198.51.100.100",
+      headers: {
+        "X-Bot-Auth-Token": "bot-secret",
+        "X-Bot-Source": "telegram-user-42",
+      },
+    });
+    const secondRes = createMockResponse();
+    const secondNext = jest.fn();
+
+    await middleware.use(secondReq, secondRes, secondNext);
+
+    expect(firstNext).toHaveBeenCalledTimes(1);
+    expect(secondNext).not.toHaveBeenCalled();
+    expect(secondRes.statusCode).toBe(429);
+  });
+
+  it("does not share authorized bot origin limits across different bot sources", async () => {
+    const middleware = createMiddleware({
+      botAuthToken: "bot-secret",
+      globalPerMin: 1,
+    });
+
+    const firstReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "203.0.113.101",
+      headers: {
+        "X-Bot-Auth-Token": "bot-secret",
+        "X-Bot-Source": "telegram-user-1",
+      },
+    });
+    const firstRes = createMockResponse();
+    const firstNext = jest.fn();
+
+    await middleware.use(firstReq, firstRes, firstNext);
+
+    const secondReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "203.0.113.101",
+      headers: {
+        "X-Bot-Auth-Token": "bot-secret",
+        "X-Bot-Source": "telegram-user-2",
+      },
+    });
+    const secondRes = createMockResponse();
+    const secondNext = jest.fn();
+
+    await middleware.use(secondReq, secondRes, secondNext);
+
+    expect(firstNext).toHaveBeenCalledTimes(1);
+    expect(secondNext).toHaveBeenCalledTimes(1);
+    expect(firstRes.statusCode).toBe(200);
+    expect(secondRes.statusCode).toBe(200);
+  });
+
+  it("treats invalid bot auth as normal IP traffic", async () => {
+    const middleware = createMiddleware({
+      botAuthToken: "bot-secret",
+      globalPerMin: 1,
+    });
+
+    const firstReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "203.0.113.102",
+      headers: {
+        "X-Bot-Auth-Token": "wrong-secret",
+        "X-Bot-Source": "telegram-user-1",
+      },
+    });
+    const firstRes = createMockResponse();
+    const firstNext = jest.fn();
+
+    await middleware.use(firstReq, firstRes, firstNext);
+
+    const secondReq = createMockRequest({
+      method: "GET",
+      path: "/api/admin/protected",
+      ip: "203.0.113.102",
+      headers: {
+        "X-Bot-Auth-Token": "wrong-secret",
+        "X-Bot-Source": "telegram-user-2",
+      },
+    });
+    const secondRes = createMockResponse();
+    const secondNext = jest.fn();
+
+    await middleware.use(secondReq, secondRes, secondNext);
+
+    expect(firstNext).toHaveBeenCalledTimes(1);
+    expect(secondNext).not.toHaveBeenCalled();
+    expect(secondRes.statusCode).toBe(429);
   });
 });

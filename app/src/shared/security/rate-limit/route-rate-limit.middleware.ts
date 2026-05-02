@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Injectable, type NestMiddleware } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { NextFunction, Request, Response } from "express";
@@ -7,6 +8,7 @@ import { AppLogger } from "../../logging/app-logger.service.js";
 import { RedisService } from "../../redis/redis.service.js";
 import {
   keyByIp,
+  keyByBotSource,
   normalizeApiKey,
   normalizeAuthEmail,
   normalizeAuthIdentifier,
@@ -24,6 +26,7 @@ import {
 
 type RateLimitSettings = {
   redisPrefix: string;
+  botAuthToken: string;
   globalPerMin: number;
   subscribeSlowDelayAfter: number;
   subscribeSlowDelayStepMs: number;
@@ -134,6 +137,37 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
     this.redisKeyPrefix = this.settings.redisPrefix || "rl:";
   }
 
+  private readonly keyByOrigin = (req: Request): string => {
+    if (this.isAuthorizedBotRequest(req)) {
+      const botSourceKey = keyByBotSource(req);
+      if (botSourceKey) {
+        return botSourceKey;
+      }
+    }
+
+    return keyByIp(req);
+  };
+
+  private isAuthorizedBotRequest(req: Request): boolean {
+    const expectedToken = String(this.settings.botAuthToken || "").trim();
+    if (!expectedToken) {
+      return false;
+    }
+
+    const providedToken = String(req.header("x-bot-auth-token") || "").trim();
+    if (!providedToken) {
+      return false;
+    }
+
+    const expectedBuffer = Buffer.from(expectedToken, "utf8");
+    const providedBuffer = Buffer.from(providedToken, "utf8");
+    if (expectedBuffer.length !== providedBuffer.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+  }
+
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rules = this.resolveRules(req);
     if (rules.length === 0) {
@@ -204,7 +238,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
               (hits - this.settings.subscribeSlowDelayAfter) *
                 this.settings.subscribeSlowDelayStepMs,
             ),
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -216,7 +250,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "subscribe",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -260,7 +294,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
               (hits - this.settings.unsubscribeSlowDelayAfter) *
                 this.settings.unsubscribeSlowDelayStepMs,
             ),
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -272,7 +306,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "unsubscribe",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -309,7 +343,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "request_ui",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -339,7 +373,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "request_email",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -387,7 +421,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "credentials_create",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -422,7 +456,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "auth_login",
             reason: "too_many_failed_attempts_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -450,7 +484,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           },
           key: (request) => {
             const identifier = normalizeAuthIdentifier(request) || "missing";
-            return `auth_login_heavy:${identifier}:${keyByIp(request)}`;
+            return `auth_login_heavy:${identifier}:${this.keyByOrigin(request)}`;
           },
         },
         {
@@ -466,7 +500,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           },
           key: (request) => {
             const identifier = normalizeAuthIdentifier(request) || "missing";
-            return `auth_login_fast:${identifier}:${keyByIp(request)}`;
+            return `auth_login_fast:${identifier}:${this.keyByOrigin(request)}`;
           },
         },
       ];
@@ -485,7 +519,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "auth_password_reset_request",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -515,7 +549,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "auth_password_reset_confirm",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -571,7 +605,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
               (hits - this.settings.handleSubscribeSlowDelayAfter) *
                 this.settings.handleSubscribeSlowDelayStepMs,
             ),
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -583,7 +617,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "handle_subscribe",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -626,7 +660,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
               (hits - this.settings.handleUnsubscribeSlowDelayAfter) *
                 this.settings.handleUnsubscribeSlowDelayStepMs,
             ),
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -638,7 +672,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "handle_unsubscribe",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -672,7 +706,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
               (hits - this.settings.handleDomainSlowDelayAfter) *
                 this.settings.handleDomainSlowDelayStepMs,
             ),
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -684,7 +718,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             where: "handle_domain",
             reason: "too_many_requests_ip",
           },
-          key: keyByIp,
+          key: this.keyByOrigin,
         },
         {
           kind: "limit",
@@ -730,7 +764,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       windowMs: 60_000,
       limit: this.settings.globalPerMin,
       message: GLOBAL_LIMIT_MESSAGE,
-      key: keyByIp,
+      key: this.keyByOrigin,
     };
   }
 
@@ -767,7 +801,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
         where,
         reason: "too_many_forwarding_operations_ip",
       },
-      key: keyByIp,
+      key: this.keyByOrigin,
     };
   }
 
@@ -786,7 +820,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             (hits - this.settings.confirmSlowDelayAfter) *
               this.settings.confirmSlowDelayStepMs,
           ),
-        key: keyByIp,
+        key: this.keyByOrigin,
       },
       {
         kind: "limit",
@@ -798,7 +832,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           where: "confirm",
           reason: "too_many_requests_ip",
         },
-        key: keyByIp,
+        key: this.keyByOrigin,
       },
       {
         kind: "limit",
@@ -839,7 +873,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
             (hits - this.settings.confirmSlowDelayAfter) *
               this.settings.confirmSlowDelayStepMs,
           ),
-        key: keyByIp,
+        key: this.keyByOrigin,
       },
       {
         kind: "limit",
@@ -851,7 +885,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           where: "handle_confirm",
           reason: "too_many_requests_ip",
         },
-        key: keyByIp,
+        key: this.keyByOrigin,
       },
       {
         kind: "limit",
@@ -903,7 +937,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           where: "credentials_confirm",
           reason: "too_many_requests_ip",
         },
-        key: keyByIp,
+        key: this.keyByOrigin,
       },
       {
         kind: "limit",

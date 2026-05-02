@@ -70,6 +70,11 @@ export function keyByIp(req: Request): string {
   return String(req.ip || "").trim().toLowerCase() || "missing_ip";
 }
 
+export function keyByBotSource(req: Request): string {
+  const source = String(req.header("x-bot-source") || "").trim();
+  return source ? `bot_source:${source.slice(0, 256)}` : "";
+}
+
 export function normalizeCredentialEmail(req: Request): string {
   return normalizeBodyEmail(req, "email");
 }
