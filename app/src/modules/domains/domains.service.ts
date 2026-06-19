@@ -23,7 +23,7 @@ export class DomainsService {
       };
     }
 
-    const names = await this.domainRepository.listActiveNames();
+    const names = await this.domainRepository.listVisibleEmailValidNames();
     this.cache = { at: now, data: names };
     return {
       data: names,

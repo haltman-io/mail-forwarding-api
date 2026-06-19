@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
 import { BansModule } from "../bans/bans.module.js";
+import { CheckDnsModule } from "../check-dns/check-dns.module.js";
 import { AdminAliasesRepository } from "./aliases/admin-aliases.repository.js";
 import { AdminAliasesController } from "./aliases/admin-aliases.controller.js";
 import { AdminAliasesService } from "./aliases/admin-aliases.service.js";
@@ -29,7 +30,7 @@ import { AdminUsersRepository } from "./users/admin-users.repository.js";
 import { AdminUsersService } from "./users/admin-users.service.js";
 
 @Module({
-  imports: [AuthModule, BansModule],
+  imports: [AuthModule, BansModule, CheckDnsModule],
   controllers: [
     AdminController,
     AdminDnsRequestsController,

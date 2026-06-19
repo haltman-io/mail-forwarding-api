@@ -97,9 +97,9 @@ export class ForwardingService {
       });
     }
 
-    let aliasName = "";
-    let aliasDomain = "";
-    let aliasAddress = "";
+    let aliasName: string;
+    let aliasDomain: string;
+    let aliasAddress: string;
     let domainRow: { id: number; name: string; active: number } | null = null;
     let intent = "subscribe";
 
@@ -161,7 +161,7 @@ export class ForwardingService {
     await this.checkBans(aliasName, aliasDomain, toParsed.email);
 
     if (!addressProvided) {
-      domainRow = await this.domainRepository.getActiveByName(aliasDomain);
+      domainRow = await this.domainRepository.getEmailValidByName(aliasDomain);
       if (!domainRow) {
         throw new PublicHttpException(400, {
           error: "invalid_domain",
@@ -201,7 +201,7 @@ export class ForwardingService {
     }
 
     for (const suffix of domainSuffixes(toParsed.domain)) {
-      const isManaged = await this.domainRepository.getActiveByName(suffix);
+      const isManaged = await this.domainRepository.getAdminActiveByName(suffix);
       if (isManaged) {
         throw new PublicHttpException(400, {
           ok: false,
@@ -436,7 +436,7 @@ export class ForwardingService {
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     let domainRow: { id: number; name: string; active: number } | null = null;
     if (!isAddressIntent) {
-      domainRow = await this.domainRepository.getActiveByName(aliasDomain);
+      domainRow = await this.domainRepository.getEmailValidByName(aliasDomain);
       if (!domainRow) {
         return {
           status: 400,

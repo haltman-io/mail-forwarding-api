@@ -9,5 +9,6 @@ import { CheckDnsService } from "./check-dns.service.js";
   imports: [BansModule],
   controllers: [CheckDnsController],
   providers: [CheckDnsClient, CheckDnsService],
+  exports: [CheckDnsClient],
 })
 export class CheckDnsModule {}

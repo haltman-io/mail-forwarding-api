@@ -20,7 +20,8 @@ describe("ForwardingController.confirm", () => {
       createIfNotExists: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
     const domainRepository = {
-      getActiveByName: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      getEmailValidByName: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      getAdminActiveByName: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
     const banPolicyService = {
       findActiveNameBan: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -205,7 +206,7 @@ describe("ForwardingController.confirm", () => {
     emailConfirmationsRepository.getPendingByTokenHash
       .mockResolvedValueOnce(pending)
       .mockResolvedValueOnce(pending);
-    domainRepository.getActiveByName.mockResolvedValue({
+    domainRepository.getEmailValidByName.mockResolvedValue({
       id: 9,
       name: "example.com",
       active: 1,
@@ -262,7 +263,7 @@ describe("ForwardingController.confirm", () => {
     emailConfirmationsRepository.getPendingByTokenHash
       .mockResolvedValueOnce(pending)
       .mockResolvedValueOnce(pending);
-    domainRepository.getActiveByName.mockResolvedValue({
+    domainRepository.getEmailValidByName.mockResolvedValue({
       id: 9,
       name: "example.com",
       active: 1,
@@ -315,7 +316,7 @@ describe("ForwardingController.confirm", () => {
     emailConfirmationsRepository.getPendingByTokenHash
       .mockResolvedValueOnce(pending)
       .mockResolvedValueOnce(pending);
-    domainRepository.getActiveByName.mockResolvedValue({
+    domainRepository.getEmailValidByName.mockResolvedValue({
       id: 9,
       name: "example.com",
       active: 1,

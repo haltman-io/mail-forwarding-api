@@ -1,9 +1,16 @@
 import { Injectable } from "@nestjs/common";
+import axios from "axios";
 
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
+import { AppLogger } from "../../../shared/logging/app-logger.service.js";
+import {
+  INVALID_TARGET_ERROR,
+  normalizeDomainTarget,
+} from "../../../shared/validation/domain-target.js";
 import { isValidDomain } from "../../../shared/validation/mailbox.js";
 import { BanPolicyService } from "../../bans/ban-policy.service.js";
+import { CheckDnsClient } from "../../check-dns/check-dns.client.js";
 import { AdminDomainsRepository } from "./admin-domains.repository.js";
 import type { AdminDomainRow } from "./admin-domains.repository.js";
 import type {
@@ -12,11 +19,18 @@ import type {
   AdminUpdateDomainDto,
 } from "../dto/admin.dto.js";
 
+export interface AdminDnsRecheckResult {
+  status: number;
+  payload: unknown;
+}
+
 @Injectable()
 export class AdminDomainsService {
   constructor(
     private readonly adminDomainsRepository: AdminDomainsRepository,
     private readonly banPolicyService: BanPolicyService,
+    private readonly checkDnsClient: CheckDnsClient,
+    private readonly logger: AppLogger,
   ) {}
 
   async listDomains(query: AdminDomainsListQueryDto): Promise<{
@@ -31,10 +45,12 @@ export class AdminDomainsService {
         limit,
         offset,
         active: query.active,
+        visible: query.visible,
         name: query.name,
       }),
       this.adminDomainsRepository.countAll({
         active: query.active,
+        visible: query.visible,
         name: query.name,
       }),
     ]);
@@ -70,13 +86,14 @@ export class AdminDomainsService {
     }
 
     const active = dto.active === undefined ? 1 : dto.active;
+    const visible = dto.visible === undefined ? 1 : dto.visible;
     const existing = await this.adminDomainsRepository.getByName(name);
     if (existing) {
       throw new PublicHttpException(409, { error: "domain_taken", name });
     }
 
     try {
-      const created = await this.adminDomainsRepository.createDomain({ name, active });
+      const created = await this.adminDomainsRepository.createDomain({ name, active, visible });
       const row = created.insertId
         ? await this.adminDomainsRepository.getById(created.insertId)
         : null;
@@ -103,7 +120,7 @@ export class AdminDomainsService {
       throw new PublicHttpException(404, { error: "domain_not_found", id });
     }
 
-    const patch: { name?: string; active?: number } = {};
+    const patch: { name?: string; active?: number; visible?: number } = {};
     let nextName = String(current.name || "").trim().toLowerCase();
 
     if (dto.name !== undefined) {
@@ -128,6 +145,10 @@ export class AdminDomainsService {
 
     if (dto.active !== undefined) {
       patch.active = dto.active;
+    }
+
+    if (dto.visible !== undefined) {
+      patch.visible = dto.visible;
     }
 
     const nextActive =
@@ -175,6 +196,75 @@ export class AdminDomainsService {
       deleted: Boolean(deleted),
       item: current,
     };
+  }
+
+  async recheckAllDomains(): Promise<AdminDnsRecheckResult> {
+    return this.relayDnsRecheck("POST /api/admin/domains/recheckdns/all", "all", () =>
+      this.checkDnsClient.recheckAllDomains(),
+    );
+  }
+
+  async recheckDomain(id: number): Promise<AdminDnsRecheckResult> {
+    const row = await this.adminDomainsRepository.getById(id);
+    if (!row) {
+      throw new PublicHttpException(404, { error: "domain_not_found", id });
+    }
+
+    const normalized = normalizeDomainTarget(row.name);
+    if (!normalized.ok) {
+      throw new PublicHttpException(500, {
+        error: "invalid_domain_state",
+        id,
+        field: "name",
+        reason: normalized.error || INVALID_TARGET_ERROR,
+      });
+    }
+
+    return this.relayDnsRecheck(
+      "POST /api/admin/domains/:id/recheckdns",
+      normalized.value,
+      () => this.checkDnsClient.recheckDomain(normalized.value),
+    );
+  }
+
+  private async relayDnsRecheck(
+    routeName: string,
+    target: string,
+    action: () => Promise<{ status: number; data: unknown }>,
+  ): Promise<AdminDnsRecheckResult> {
+    const startedAt = process.hrtime.bigint();
+
+    try {
+      const response = await action();
+      this.logger.info("admin.domains.recheck.relay", {
+        route: routeName,
+        target,
+        upstream_status: response.status,
+        duration_ms: this.durationMs(startedAt),
+      });
+
+      return {
+        status: response.status || 502,
+        payload: response.data,
+      };
+    } catch (error) {
+      const status = axios.isAxiosError(error) && error.code === "ECONNABORTED" ? 503 : 502;
+      this.logger.error("admin.domains.recheck.error", {
+        route: routeName,
+        target,
+        duration_ms: this.durationMs(startedAt),
+        err: error,
+      });
+
+      return {
+        status,
+        payload: { error: "internal_error" },
+      };
+    }
+  }
+
+  private durationMs(startedAt: bigint): number {
+    return Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
   }
 
 }

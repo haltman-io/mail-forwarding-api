@@ -5,6 +5,7 @@ import type { Request } from "express";
 import { AppLoggerService } from "../../shared/logging/app-logger.service.js";
 import { BanPolicyService } from "../bans/ban-policy.service.js";
 import { CheckDnsClient } from "./check-dns.client.js";
+import { parseCheckDnsPayload } from "./check-dns.response.js";
 
 export interface RelayResult {
   status: number;
@@ -47,6 +48,7 @@ export class CheckDnsService {
 
       const response = await action();
       this.logRelay(routeName, target, startedAt, response.status);
+      this.validateKnownPayload(routeName, target, response.data);
       return {
         status: response.status || 502,
         payload: response.data,
@@ -96,5 +98,19 @@ export class CheckDnsService {
 
   private durationMs(startedAt: bigint): number {
     return Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
+  }
+
+  private validateKnownPayload(routeName: string, target: string, payload: unknown): void {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    if ("error" in payload) return;
+
+    const parsed = parseCheckDnsPayload(payload);
+    if (!parsed.ok) {
+      this.logger.warn("checkdns.relay.unrecognized_payload", {
+        route: routeName,
+        target,
+        reason: parsed.reason,
+      });
+    }
   }
 }

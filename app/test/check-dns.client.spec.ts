@@ -10,8 +10,8 @@ describe("CheckDnsClient", () => {
       maxPayloadBytes: 64 * 1024,
     });
 
-    const post = jest.fn<any>();
-    const get = jest.fn<any>();
+    const post = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+    const get = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
     (client as unknown as { client: { post: typeof post; get: typeof get } }).client = {
       post,
@@ -64,6 +64,32 @@ describe("CheckDnsClient", () => {
     await client.checkDns("example.com");
 
     expect(get).toHaveBeenCalledWith("/api/checkdns/example.com", {
+      headers: {
+        "x-api-key": "relay-token",
+      },
+    });
+  });
+
+  it("calls the upstream all-domains recheck endpoint with the internal api prefix", async () => {
+    const { client, post } = createClient();
+    post.mockResolvedValue({ status: 202, data: { ok: true } });
+
+    await client.recheckAllDomains();
+
+    expect(post).toHaveBeenCalledWith("/api/recheckdns/all", undefined, {
+      headers: {
+        "x-api-key": "relay-token",
+      },
+    });
+  });
+
+  it("calls the upstream single-domain recheck endpoint with the internal api prefix", async () => {
+    const { client, post } = createClient();
+    post.mockResolvedValue({ status: 202, data: { ok: true } });
+
+    await client.recheckDomain("example.com");
+
+    expect(post).toHaveBeenCalledWith("/api/recheckdns/example.com", undefined, {
       headers: {
         "x-api-key": "relay-token",
       },

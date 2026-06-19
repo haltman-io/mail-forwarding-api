@@ -9,13 +9,32 @@ import { PERMANENT_ALIAS_GOTO } from "../src/shared/utils/alias-policy.js";
 
 describe("Admin delete services", () => {
   it("physically deletes domains and returns the existing row snapshot", async () => {
-    type DomainRow = { id: number; name: string; active: number };
+    type DomainRow = {
+      id: number;
+      name: string;
+      active: number;
+      active_mx: number;
+      active_ui: number;
+      visible: number;
+    };
     const getById = jest.fn<(id: number) => Promise<DomainRow | null>>();
     const deleteById = jest.fn<(id: number) => Promise<boolean>>();
     const adminDomainsRepository = { getById, deleteById };
-    getById.mockResolvedValueOnce({ id: 4, name: "example.com", active: 1 });
+    getById.mockResolvedValueOnce({
+      id: 4,
+      name: "example.com",
+      active: 1,
+      active_mx: 1,
+      active_ui: 0,
+      visible: 1,
+    });
     deleteById.mockResolvedValue(true);
-    const service = new AdminDomainsService(adminDomainsRepository as never, {} as never);
+    const service = new AdminDomainsService(
+      adminDomainsRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     const result = await service.deleteDomain(4);
 
@@ -23,7 +42,14 @@ describe("Admin delete services", () => {
     expect(result).toEqual({
       ok: true,
       deleted: true,
-      item: { id: 4, name: "example.com", active: 1 },
+      item: {
+        id: 4,
+        name: "example.com",
+        active: 1,
+        active_mx: 1,
+        active_ui: 0,
+        visible: 1,
+      },
     });
   });
 

@@ -15,6 +15,7 @@ export interface AdminApiTokenRow {
   created_ip: string | null;
   user_agent: string | null;
   last_used_at: Date | string | null;
+  automatic_renew: number;
 }
 
 @Injectable()
@@ -33,7 +34,8 @@ export class AdminApiTokensRepository {
           revoked_reason,
           INET6_NTOA(created_ip) AS created_ip,
           user_agent,
-          last_used_at
+          last_used_at,
+          automatic_renew
        FROM api_tokens
        WHERE id = ?
        LIMIT 1`,
@@ -82,7 +84,8 @@ export class AdminApiTokensRepository {
           revoked_reason,
           INET6_NTOA(created_ip) AS created_ip,
           user_agent,
-          last_used_at
+          last_used_at,
+          automatic_renew
        FROM api_tokens
        ${whereSql}
        ORDER BY id DESC
@@ -139,7 +142,7 @@ export class AdminApiTokensRepository {
     }
 
     const days = Number(payload.days);
-    if (!Number.isInteger(days) || days <= 0 || days > 90) {
+    if (!Number.isInteger(days) || days <= 0 || days > 9999) {
       throw new Error("invalid_days");
     }
 

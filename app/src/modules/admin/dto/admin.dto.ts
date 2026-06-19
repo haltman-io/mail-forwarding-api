@@ -15,6 +15,14 @@ import {
 import { MAX_PASSWORD_LEN, MIN_PASSWORD_LEN } from "../../auth/services/password.service.js";
 import { normalizeLowerTrim } from "../../../shared/validation/mailbox.js";
 
+function primitiveToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return "";
+}
+
 function transformOptionalBooleanInt(value: unknown): number | undefined | null {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -24,7 +32,7 @@ function transformOptionalBooleanInt(value: unknown): number | undefined | null 
     return Number.NaN;
   }
 
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = primitiveToString(value).trim().toLowerCase();
   if (!normalized) return Number.NaN;
   if (["1", "true", "yes", "on"].includes(normalized)) return 1;
   if (["0", "false", "no", "off"].includes(normalized)) return 0;
@@ -35,7 +43,7 @@ function transformOptionalDate(value: unknown): Date | null | undefined | string
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
 
-  const date = new Date(String(value));
+  const date = new Date(primitiveToString(value));
   if (Number.isNaN(date.getTime())) {
     return "__invalid_date__";
   }
@@ -52,7 +60,7 @@ function transformOptionalBoolean(value: unknown): boolean | undefined | string 
   if (value === undefined) return undefined;
   if (typeof value === "boolean") return value;
 
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = primitiveToString(value).trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return "__invalid_boolean__";
@@ -82,6 +90,13 @@ export class AdminDomainsListQueryDto extends AdminPaginationQueryDto {
   active?: number;
 
   @IsOptional()
+  @Transform(({ value }) => transformOptionalBooleanInt(value))
+  @IsInt()
+  @Min(0)
+  @Max(1)
+  visible?: number;
+
+  @IsOptional()
   @Transform(({ value }) => normalizeOptionalSearch(value))
   @IsString()
   @MinLength(1)
@@ -102,6 +117,13 @@ export class AdminCreateDomainDto {
   @Min(0)
   @Max(1)
   active?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBooleanInt(value))
+  @IsInt()
+  @Min(0)
+  @Max(1)
+  visible?: number;
 }
 
 export class AdminUpdateDomainDto {
@@ -118,6 +140,13 @@ export class AdminUpdateDomainDto {
   @Min(0)
   @Max(1)
   active?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBooleanInt(value))
+  @IsInt()
+  @Min(0)
+  @Max(1)
+  visible?: number;
 }
 
 export class AdminAliasesListQueryDto extends AdminPaginationQueryDto {
@@ -397,7 +426,7 @@ export class AdminCreateApiTokenDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(90)
+  @Max(9999)
   days?: number;
 
   @IsOptional()

@@ -43,4 +43,16 @@ export class CheckDnsClient {
       headers: { "x-api-key": this.config.token },
     });
   }
+
+  recheckAllDomains(): Promise<AxiosResponse> {
+    return this.client.post("/api/recheckdns/all", undefined, {
+      headers: { "x-api-key": this.config.token },
+    });
+  }
+
+  recheckDomain(target: string): Promise<AxiosResponse> {
+    return this.client.post(`/api/recheckdns/${encodeURIComponent(target)}`, undefined, {
+      headers: { "x-api-key": this.config.token },
+    });
+  }
 }

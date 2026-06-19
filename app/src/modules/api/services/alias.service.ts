@@ -110,7 +110,7 @@ export class AliasService {
       throw new PublicHttpException(403, { error: "banned", ban: banOwner });
     }
 
-    const domainRow = await this.domainRepository.getActiveByName(aliasDomain);
+    const domainRow = await this.domainRepository.getEmailValidByName(aliasDomain);
     if (!domainRow) {
       throw new PublicHttpException(400, { error: "invalid_domain", field: "alias_domain" });
     }

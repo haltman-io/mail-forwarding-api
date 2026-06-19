@@ -66,6 +66,14 @@ export function normalizeApiKey(req: Request): string {
   return API_KEY_RE.test(headerValue) ? headerValue : "";
 }
 
+export function normalizeCredentialApiKey(req: Request): string {
+  const body = req.body as Record<string, unknown> | undefined;
+  const query = req.query as Record<string, unknown> | undefined;
+  const value = body?.api_key ?? body?.key ?? query?.api_key ?? query?.key ?? "";
+  const normalized = normalizeString(value);
+  return API_KEY_RE.test(normalized) ? normalized : "";
+}
+
 export function keyByIp(req: Request): string {
   return String(req.ip || "").trim().toLowerCase() || "missing_ip";
 }

@@ -45,6 +45,10 @@ export class ApiKeyGuard implements CanActivate {
         owner_email: tokenRow.owner_email,
       };
 
+      if (Number(tokenRow.automatic_renew ?? 0) === 1) {
+        await this.apiTokensRepository.extendAutomaticRenewIfDue(tokenRow.id);
+      }
+
       this.apiTokensRepository.touchLastUsed(tokenRow.id).catch(() => {});
 
       return true;

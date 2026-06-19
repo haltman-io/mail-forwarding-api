@@ -16,7 +16,10 @@ describe("ApiCredentialsController.confirmCredentials", () => {
     const apiTokensRepository = {
       createToken: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
-    const banPolicyService = {} as never;
+    const banPolicyService = {
+      findActiveIpBan: jest.fn<() => Promise<null>>().mockResolvedValue(null),
+      findActiveEmailOrDomainBan: jest.fn<() => Promise<null>>().mockResolvedValue(null),
+    };
     const databaseService = {
       withTransaction: jest.fn(async (work: (connection: object) => Promise<unknown>) =>
         work({ tx: true }),
@@ -25,14 +28,18 @@ describe("ApiCredentialsController.confirmCredentials", () => {
     const logger = {
       logError: jest.fn(),
     };
+    const domainRepository = {
+      getAdminActiveByName: jest.fn<() => Promise<null>>().mockResolvedValue(null),
+    };
 
     const apiCredentialsService = new ApiCredentialsService(
       apiCredentialsEmailService,
       apiTokenRequestsRepository as never,
       apiTokensRepository as never,
-      banPolicyService,
+      banPolicyService as never,
       databaseService as never,
       logger as never,
+      domainRepository as never,
     );
 
     const controller = new ApiCredentialsController(
@@ -136,8 +143,10 @@ describe("ApiCredentialsController.confirmCredentials", () => {
       ok: true,
       pending: true,
       mutation_required: true,
+      action: "create",
       email: "owner@example.com",
       days: 30,
+      automatic_renew: false,
       confirm_via: {
         method: "POST",
         path: "/api/credentials/confirm",

@@ -14,12 +14,16 @@ const RETRY_MAX_DELAY_MS = 120;
 export interface PendingMeta {
   id: number | null;
   email: string | null;
+  action: ApiTokenRequestAction;
   expires_at: Date | null;
   last_sent_at: Date | null;
   send_count: number;
   next_allowed_send_at: Date | null;
   remaining_attempts: number;
+  automatic_renew: number;
 }
+
+export type ApiTokenRequestAction = "create" | "list" | "destroy_all";
 
 export interface UpsertResult {
   action: "created" | "resent" | "cooldown" | "rate_limited";
@@ -30,6 +34,7 @@ export interface UpsertResult {
 interface PendingRow {
   id: number;
   email: string;
+  action: ApiTokenRequestAction;
   status: string;
   days: number;
   created_at: Date | string;
@@ -38,6 +43,7 @@ interface PendingRow {
   send_count: number | string;
   last_sent_at: Date | string | null;
   attempts_confirm: number;
+  automatic_renew: number | string;
 }
 
 interface InsertResult {
@@ -96,6 +102,13 @@ function normalizeMaxSendCount(value: unknown): number {
   return Math.floor(num);
 }
 
+function normalizeRequestAction(value: unknown): ApiTokenRequestAction {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (normalized === "list") return "list";
+  if (normalized === "destroy_all") return "destroy_all";
+  return "create";
+}
+
 function buildPendingMeta(
   pending: PendingRow | null,
   cooldownSeconds: number,
@@ -113,36 +126,40 @@ function buildPendingMeta(
   return {
     id: pending?.id ?? null,
     email: pending?.email ?? null,
+    action: normalizeRequestAction(pending?.action),
     expires_at: expiresAt,
     last_sent_at: lastSentAt,
     send_count: sendCount,
     next_allowed_send_at: nextAllowedSendAt,
     remaining_attempts: remainingAttempts,
+    automatic_renew: Number(pending?.automatic_renew ?? 0) === 1 ? 1 : 0,
   };
 }
 
 async function selectPendingForUpdate(
   conn: PoolConnection,
   email: string,
+  action: ApiTokenRequestAction,
 ): Promise<PendingRow | null> {
   const rows: PendingRow[] = await conn.query(
-    `SELECT id, email, status, days, created_at, expires_at, confirmed_at,
-            send_count, last_sent_at, attempts_confirm
+    `SELECT id, email, action, status, days, created_at, expires_at, confirmed_at,
+            send_count, last_sent_at, attempts_confirm, automatic_renew
      FROM api_token_requests
      WHERE email = ?
+       AND action = ?
        AND status = 'pending'
      ORDER BY id DESC
      LIMIT 1
      FOR UPDATE`,
-    [email],
+    [email, action],
   );
   return rows[0] ?? null;
 }
 
 async function selectById(conn: PoolConnection, id: number): Promise<PendingRow | null> {
   const rows: PendingRow[] = await conn.query(
-    `SELECT id, email, status, days, created_at, expires_at, confirmed_at,
-            send_count, last_sent_at, attempts_confirm
+    `SELECT id, email, action, status, days, created_at, expires_at, confirmed_at,
+            send_count, last_sent_at, attempts_confirm, automatic_renew
      FROM api_token_requests
      WHERE id = ?
      LIMIT 1`,
@@ -168,8 +185,8 @@ export class ApiTokenRequestsRepository {
     const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<PendingRow[]>(
       executor,
-      `SELECT id, email, status, days, created_at, expires_at, confirmed_at,
-              send_count, last_sent_at, attempts_confirm
+      `SELECT id, email, action, status, days, created_at, expires_at, confirmed_at,
+              send_count, last_sent_at, attempts_confirm, automatic_renew
        FROM api_token_requests
        WHERE token_hash = ?
          AND status = 'pending'
@@ -200,7 +217,9 @@ export class ApiTokenRequestsRepository {
 
   async upsertPendingByEmailTx(payload: {
     email: string;
+    action: ApiTokenRequestAction;
     days: number;
+    automaticRenew: boolean;
     ttlMinutes: number;
     cooldownSeconds: number;
     maxSendCount: number;
@@ -210,6 +229,7 @@ export class ApiTokenRequestsRepository {
     const ttl = assertTtlMinutes(payload.ttlMinutes);
     const cooldown = normalizeCooldownSeconds(payload.cooldownSeconds);
     const maxSends = normalizeMaxSendCount(payload.maxSendCount);
+    const action = normalizeRequestAction(payload.action);
 
     const maxRetries = DEFAULT_RETRY_MAX;
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -219,12 +239,13 @@ export class ApiTokenRequestsRepository {
             `UPDATE api_token_requests
              SET status = 'expired'
              WHERE email = ?
+               AND action = ?
                AND status = 'pending'
                AND expires_at <= NOW(6)`,
-            [payload.email],
+            [payload.email, action],
           );
 
-          let pending = await selectPendingForUpdate(conn, payload.email);
+          let pending = await selectPendingForUpdate(conn, payload.email, action);
 
           if (
             pending &&
@@ -274,6 +295,7 @@ export class ApiTokenRequestsRepository {
                   `UPDATE api_token_requests
                    SET token_hash = ?,
                        days = ?,
+                       automatic_renew = ?,
                        expires_at = DATE_ADD(NOW(6), INTERVAL ? MINUTE),
                        request_ip = ?,
                        user_agent = ?,
@@ -283,6 +305,7 @@ export class ApiTokenRequestsRepository {
                   [
                     tokenHash32,
                     payload.days,
+                    payload.automaticRenew ? 1 : 0,
                     ttl,
                     payload.requestIpPacked,
                     payload.userAgentOrNull ?? null,
@@ -313,16 +336,18 @@ export class ApiTokenRequestsRepository {
             try {
               const result: InsertResult = await conn.query(
                 `INSERT INTO api_token_requests (
-                  email, token_hash, status, days, created_at, expires_at,
+                  email, action, token_hash, status, days, automatic_renew, created_at, expires_at,
                   request_ip, user_agent, send_count, last_sent_at, attempts_confirm
                 ) VALUES (
-                  ?, ?, 'pending', ?, NOW(6), DATE_ADD(NOW(6), INTERVAL ? MINUTE),
+                  ?, ?, ?, 'pending', ?, ?, NOW(6), DATE_ADD(NOW(6), INTERVAL ? MINUTE),
                   ?, ?, 1, NOW(6), 0
                 )`,
                 [
                   payload.email,
+                  action,
                   tokenHash32,
                   payload.days,
+                  payload.automaticRenew ? 1 : 0,
                   ttl,
                   payload.requestIpPacked,
                   payload.userAgentOrNull ?? null,
@@ -338,7 +363,7 @@ export class ApiTokenRequestsRepository {
             } catch (err) {
               const e = err as { code?: string };
               if (e?.code === "ER_DUP_ENTRY") {
-                const existing = await selectPendingForUpdate(conn, payload.email);
+                const existing = await selectPendingForUpdate(conn, payload.email, action);
                 if (existing) {
                   return {
                     action: "cooldown" as const,

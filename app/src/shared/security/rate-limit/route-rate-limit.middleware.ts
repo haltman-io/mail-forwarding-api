@@ -14,6 +14,7 @@ import {
   normalizeAuthIdentifier,
   normalizeBodyTarget,
   normalizeBodyToken,
+  normalizeCredentialApiKey,
   normalizeCredentialEmail,
   normalizeGetAddress,
   normalizeGetDomain,
@@ -408,7 +409,19 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       ];
     }
 
-    if (method === "POST" && path === "/api/credentials/create") {
+    if (
+      method === "POST" &&
+      (
+        path === "/api/credentials/create" ||
+        path === "/api/credentials/list/request" ||
+        path === "/api/credentials/destroy-all/request"
+      )
+    ) {
+      const where = path === "/api/credentials/create"
+        ? "credentials_create"
+        : path === "/api/credentials/list/request"
+          ? "credentials_list_request"
+          : "credentials_destroy_all_request";
       return [
         this.globalLimitRule(),
         {
@@ -418,7 +431,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           limit: this.settings.credentialsCreatePerHourPerIp,
           message: {
             error: "rate_limited",
-            where: "credentials_create",
+            where,
             reason: "too_many_requests_ip",
           },
           key: this.keyByOrigin,
@@ -430,10 +443,43 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
           limit: this.settings.credentialsCreatePerHourPerEmail,
           message: {
             error: "rate_limited",
-            where: "credentials_create",
+            where,
             reason: "too_many_requests_email",
           },
-          key: (request) => `cred_create:${normalizeCredentialEmail(request) || "missing"}`,
+          key: (request) => `${where}:${normalizeCredentialEmail(request) || "missing"}`,
+        },
+      ];
+    }
+
+    if (
+      method === "POST" &&
+      (
+        path === "/api/credentials/renew" ||
+        path === "/api/credentials/automatic-renew" ||
+        path === "/api/credentials/destroy"
+      )
+    ) {
+      const where = path === "/api/credentials/renew"
+        ? "credentials_renew"
+        : path === "/api/credentials/automatic-renew"
+          ? "credentials_automatic_renew"
+          : "credentials_destroy";
+      return [
+        this.globalLimitRule(),
+        {
+          kind: "limit",
+          name: where,
+          windowMs: 60_000,
+          limit: this.settings.aliasCreatePerMinPerKey,
+          message: {
+            error: "rate_limited",
+            where,
+            reason: "too_many_requests_key",
+          },
+          key: (request) => {
+            const key = normalizeCredentialApiKey(request);
+            return key ? `${where}:${key.slice(0, 64)}` : "";
+          },
         },
       ];
     }

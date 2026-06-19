@@ -3,12 +3,27 @@ import { escapeHtml } from "../../../shared/utils/security-email-template.js";
 export function renderCredentialsConfirmPreviewPage(
   token: string,
   path: string,
-  preview: { email: string; days: number },
+  preview: { email: string; days: number; action?: string; automatic_renew?: boolean },
 ): string {
   const email = String(preview.email || "");
   const days = Number(preview.days || 0);
   const lifetimeText = `${days} day${days === 1 ? "" : "s"}`;
-  const actionSql = `API_Key CREATE ${email}`;
+  const action = String(preview.action || "create");
+  const actionSql =
+    action === "list"
+      ? `API_Key LIST ${email}`
+      : action === "destroy_all"
+        ? `API_Key DESTROY_ALL ${email}`
+        : `API_Key CREATE ${email}`;
+  const finalDetail =
+    action === "create"
+      ? {
+          label: "API Key Lifetime",
+          value: `${lifetimeText.toUpperCase()} / AUTOMATIC RENEW ${preview.automatic_renew ? "ENABLED" : "DISABLED"}`,
+        }
+      : action === "list"
+        ? { label: "Requested Data", value: "ACTIVE API KEY METADATA" }
+        : { label: "Scope", value: "ALL API KEYS LINKED TO THIS EMAIL" };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -61,13 +76,13 @@ export function renderCredentialsConfirmPreviewPage(
 
       <div style="background-color:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:10px;padding:14px 16px;margin-bottom:32px;">
         <p style="margin:0 0 6px;font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1px;">
-          API Key Lifetime
+          ${escapeHtml(finalDetail.label)}
         </p>
-        <code style="display:block;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.82);word-break:break-word;">${escapeHtml(lifetimeText.toUpperCase())}</code>
+        <code style="display:block;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.82);word-break:break-word;">${escapeHtml(finalDetail.value)}</code>
       </div>
 
       <p style="margin:0 0 24px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.7;color:rgba(255,255,255,0.62);text-align:center;">
-        Review the pending API key issuance and confirm it only if you started this request.
+        Review the pending API credentials action and confirm it only if you started this request.
       </p>
 
       <form method="post" action="${escapeHtml(path)}" style="margin:0;">

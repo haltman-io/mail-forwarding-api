@@ -10,6 +10,6 @@ export class CreateCredentialsDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(90)
+  @Max(9999)
   days?: number;
 }

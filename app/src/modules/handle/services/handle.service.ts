@@ -68,7 +68,7 @@ export class HandleService {
       });
     }
 
-    const managedDomain = await this.domainRepository.getActiveByName(to.domain);
+    const managedDomain = await this.domainRepository.getAdminActiveByName(to.domain);
     if (managedDomain) {
       throw new PublicHttpException(400, {
         error: "invalid_params",

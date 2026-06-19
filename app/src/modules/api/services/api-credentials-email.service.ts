@@ -6,9 +6,13 @@ import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import { normalizeEmailStrict } from "../../../shared/utils/auth-identifiers.js";
 import { buildEmailSubject } from "../../../shared/utils/email-subject-template.js";
 import { packIp16 } from "../../../shared/utils/ip-pack.js";
-import { renderSecurityEmail } from "../../../shared/utils/security-email-template.js";
+import {
+  renderSecurityEmail,
+  type SecurityEmailDetail,
+} from "../../../shared/utils/security-email-template.js";
 import {
   ApiTokenRequestsRepository,
+  type ApiTokenRequestAction,
   type PendingMeta,
 } from "../repositories/api-token-requests.repository.js";
 
@@ -51,14 +55,18 @@ export class ApiCredentialsEmailService {
 
   async sendApiTokenRequestEmail(payload: {
     email: string;
-    days: number;
+    action?: ApiTokenRequestAction;
+    days?: number;
+    automaticRenew?: boolean;
     requestIpText: string | undefined;
     userAgent: string;
   }): Promise<SendResult> {
     const to = normalizeEmailStrict(payload.email);
     if (!to) throw new Error("invalid_email");
 
-    const requestedDays = this.parseRequestedDays(payload.days);
+    const action = payload.action ?? "create";
+    const requestedDays = action === "create" ? this.parseRequestedDays(payload.days) : 1;
+    const automaticRenew = Boolean(payload.automaticRenew);
 
     const credentialsSettings =
       this.configService.getOrThrow<ApiCredentialsSettings>("apiCredentials");
@@ -78,7 +86,9 @@ export class ApiCredentialsEmailService {
 
     const result = await this.apiTokenRequestsRepository.upsertPendingByEmailTx({
       email: to,
+      action,
       days: requestedDays,
+      automaticRenew,
       ttlMinutes,
       cooldownSeconds,
       maxSendCount,
@@ -121,16 +131,16 @@ export class ApiCredentialsEmailService {
       code: confirmToken,
     });
 
-    const lifetimeText = `${requestedDays} day${requestedDays === 1 ? "" : "s"}`;
-    const actionSql = `API_Key CREATE ${to}`;
+    const actionSql = this.buildActionLine(action, to);
+    const details = this.buildActionDetails(action, to, requestedDays, automaticRenew);
 
-    const text = this.buildPlainText(confirmToken, ttlMinutes, actionSql, lifetimeText, confirmUrl);
+    const text = this.buildPlainText(confirmToken, ttlMinutes, actionSql, details, confirmUrl);
     const html = this.buildHtml(
       tenantFqdn,
       confirmToken,
       ttlMinutes,
       actionSql,
-      lifetimeText,
+      details,
       confirmUrl,
     );
 
@@ -146,9 +156,52 @@ export class ApiCredentialsEmailService {
     };
   }
 
-  private parseRequestedDays(days: number): number {
+  async sendApiTokenDestroyedEmail(payload: {
+    email: string;
+    requestIpText: string | undefined;
+    userAgent: string;
+  }): Promise<void> {
+    const to = normalizeEmailStrict(payload.email);
+    if (!to) throw new Error("invalid_email");
+
+    const smtpSettings = this.configService.getOrThrow<SmtpSettings>("smtp");
+    const from = String(smtpSettings.from || "").trim();
+    if (!from) throw new Error("missing_SMTP_FROM");
+
+    const appSettings = this.configService.getOrThrow<{ publicUrl: string }>("app");
+    const confirmBaseUrl = String(appSettings.publicUrl || "").trim().replace(/\/+$/, "");
+    if (!confirmBaseUrl) throw new Error("missing_APP_PUBLIC_URL");
+
+    const tenantFqdn = this.extractHostname(confirmBaseUrl);
+    const details: SecurityEmailDetail[] = [
+      { label: "Mutation", value: `API_Key DESTROY ${to}` },
+      { label: "Owner Email", value: to },
+    ];
+    if (payload.requestIpText) {
+      details.push({ label: "Request IP", value: payload.requestIpText });
+    }
+
+    const subject = `API key destroyed | ${tenantFqdn}`;
+    const text = this.buildNotificationPlainText(details);
+    const html = renderSecurityEmail({
+      tenantFqdn,
+      preheader: "An API key linked to this email was destroyed.",
+      sectionLabel: "Security Notification",
+      detailsHeading: "Action Details",
+      details,
+      paragraphs: [
+        "An API key linked to this email address was destroyed.",
+        "If you did not start this action, create a new key and review your account access.",
+      ],
+    });
+
+    const transporter = this.createTransport(smtpSettings);
+    await transporter.sendMail({ from, to, subject, text, html });
+  }
+
+  private parseRequestedDays(days: unknown): number {
     const num = Number(days);
-    if (!Number.isInteger(num) || num <= 0 || num > 90) return 1;
+    if (!Number.isInteger(num) || num <= 0 || num > 9999) return 1;
     return num;
   }
 
@@ -191,9 +244,13 @@ export class ApiCredentialsEmailService {
     confirmToken: string,
     ttlMinutes: number,
     actionSql: string,
-    lifetimeText: string,
+    details: SecurityEmailDetail[],
     confirmUrl: string,
   ): string {
+    const detailText = details
+      .map((detail) => `${detail.label.toUpperCase()}\n${detail.value}`)
+      .join("\n\n");
+
     return (
       `YOUR CONFIRMATION TOKEN IS: ${confirmToken}\n` +
       `EXPIRES IN ${ttlMinutes} MINUTES.\n\n` +
@@ -201,8 +258,7 @@ export class ApiCredentialsEmailService {
       `STATUS: PENDING CONFIRMATION.\n\n` +
       `ACTION\n` +
       `${actionSql}\n\n` +
-      `API KEY LIFETIME\n` +
-      `${lifetimeText.toUpperCase()}\n\n` +
+      `${detailText}\n\n` +
       `CONFIRM LINK\n` +
       `${confirmUrl}\n\n` +
       `IGNORE IF THIS WASN'T YOU.\n` +
@@ -214,12 +270,27 @@ export class ApiCredentialsEmailService {
     );
   }
 
+  private buildNotificationPlainText(details: SecurityEmailDetail[]): string {
+    const detailText = details
+      .map((detail) => `${detail.label.toUpperCase()}\n${detail.value}`)
+      .join("\n\n");
+
+    return (
+      `API KEY SECURITY NOTIFICATION.\n\n` +
+      `${detailText}\n\n` +
+      `IF THIS WASN'T YOU, CREATE A NEW KEY AND REVIEW YOUR ACCESS.\n\n` +
+      `---\n` +
+      `SYSTEM GENERATED MESSAGE. REPLIES ARE /dev/null.\n` +
+      `POWERED BY HALTMAN.IO & THE HACKER'S CHOICE\n`
+    );
+  }
+
   private buildHtml(
     tenantFqdn: string,
     confirmToken: string,
     ttlMinutes: number,
     actionSql: string,
-    lifetimeText: string,
+    details: SecurityEmailDetail[],
     confirmUrl: string,
   ): string {
     return renderSecurityEmail({
@@ -229,20 +300,50 @@ export class ApiCredentialsEmailService {
       tokenLabel: "Confirmation Token",
       token: confirmToken,
       detailsHeading: "Action Details",
-      details: [
-        { label: "Mutation", value: actionSql },
-        { label: "API Key Lifetime", value: lifetimeText.toUpperCase() },
-      ],
+      details: [{ label: "Mutation", value: actionSql }, ...details],
       ttlMinutes,
       ttlPrefix: "This request expires in",
       paragraphs: [
-        "Confirm this API key issuance only if you started the request.",
-        "Ignore this email if you did not request it. No token, no API key.",
+        "Confirm this API credentials action only if you started the request.",
+        "Ignore this email if you did not request it. No token, no action.",
       ],
       cta: {
         href: confirmUrl,
         label: "Confirm Action ->",
       },
     });
+  }
+
+  private buildActionLine(action: ApiTokenRequestAction, email: string): string {
+    if (action === "list") return `API_Key LIST ${email}`;
+    if (action === "destroy_all") return `API_Key DESTROY_ALL ${email}`;
+    return `API_Key CREATE ${email}`;
+  }
+
+  private buildActionDetails(
+    action: ApiTokenRequestAction,
+    email: string,
+    days: number,
+    automaticRenew: boolean,
+  ): SecurityEmailDetail[] {
+    if (action === "list") {
+      return [
+        { label: "Owner Email", value: email },
+        { label: "Requested Data", value: "Active API key metadata" },
+      ];
+    }
+
+    if (action === "destroy_all") {
+      return [
+        { label: "Owner Email", value: email },
+        { label: "Scope", value: "All API keys linked to this email" },
+      ];
+    }
+
+    const lifetimeText = `${days} day${days === 1 ? "" : "s"}`;
+    return [
+      { label: "API Key Lifetime", value: lifetimeText.toUpperCase() },
+      { label: "Automatic Renew", value: automaticRenew ? "ENABLED" : "DISABLED" },
+    ];
   }
 }

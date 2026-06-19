@@ -36,8 +36,8 @@ export class StatsService {
     }
 
     const [domains, aliases, forwarded] = await Promise.all([
-      this.domainRepository.countActive(),
-      this.aliasMetricsRepository.countActive(),
+      this.domainRepository.countVisibleEmailValid(),
+      this.aliasMetricsRepository.countVisibleEmailValid(),
       this.forwardCounterRepository.getTotal(),
     ]);
 

@@ -101,7 +101,7 @@ export class AdminAliasesService {
           });
         }
 
-        const domainRow = await this.adminDomainsRepository.getActiveByName(
+        const domainRow = await this.adminDomainsRepository.getEmailValidByName(
           address.domain,
           connection,
         );
@@ -199,7 +199,7 @@ export class AdminAliasesService {
               });
             }
 
-            const domainRow = await this.adminDomainsRepository.getActiveByName(
+            const domainRow = await this.adminDomainsRepository.getEmailValidByName(
               parsed.domain,
               connection,
             );
