@@ -2,6 +2,11 @@
 
 REST API for managing email aliases, forwarding rules, and API credentials. Built with NestJS 11, backed by MariaDB, with optional Redis for distributed rate limiting.
 
+## Documentation
+
+> [!IMPORTANT]
+> This repository may be out of date or may not accurately reflect the current API logic. The most up-to-date documentation will always be available at: [https://mail.thc.org/docs/](https://mail.thc.org/docs/)
+
 ## Features
 
 - Email alias creation, forwarding, and deactivation with email confirmation
