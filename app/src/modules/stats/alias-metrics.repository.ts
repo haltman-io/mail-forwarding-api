@@ -16,7 +16,8 @@ export class AliasMetricsRepository {
          (SELECT COUNT(*)
           FROM alias a
           INNER JOIN domain d
-            ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+            ON d.name COLLATE utf8mb4_unicode_ci =
+               SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
           WHERE a.active = 1
             AND d.active = 1
             AND d.active_mx = 1
@@ -30,7 +31,8 @@ export class AliasMetricsRepository {
        - (SELECT COUNT(*)
           FROM alias_handle_disabled_domain disabled
           INNER JOIN domain d
-            ON d.name = disabled.domain
+            ON d.name COLLATE utf8mb4_unicode_ci =
+               disabled.domain COLLATE utf8mb4_unicode_ci
           WHERE disabled.active = 1
             AND d.active = 1
             AND d.active_mx = 1

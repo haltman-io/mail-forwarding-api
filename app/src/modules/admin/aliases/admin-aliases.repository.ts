@@ -37,7 +37,8 @@ export class AdminAliasesRepository {
       `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        WHERE a.id = ?
        LIMIT 1${lockClause}`,
       [id],
@@ -58,7 +59,8 @@ export class AdminAliasesRepository {
       `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        WHERE a.address = ?
        LIMIT 1${lockClause}`,
       [address],
@@ -113,7 +115,8 @@ export class AdminAliasesRepository {
       `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        ${whereSql}
        ORDER BY a.id DESC
        LIMIT ? OFFSET ?`,
@@ -231,8 +234,8 @@ export class AdminAliasesRepository {
     connection?: PoolConnection,
   ): Promise<number> {
     const executor = connection ?? this.database;
-    let matchSql = "";
-    let params: unknown[] = [];
+    let matchSql: string;
+    let params: unknown[];
 
     if (input.banType === "email") {
       matchSql = "goto = ?";

@@ -15,6 +15,7 @@ describe("AliasMetricsRepository", () => {
     expect(String(sql)).toContain("d.active_mx = 1");
     expect(String(sql)).toContain("d.visible = 1");
     expect(String(sql)).toContain("SUBSTRING_INDEX(a.address, '@', -1)");
+    expect(String(sql)).toContain("COLLATE utf8mb4_unicode_ci");
     expect(String(sql)).toContain("alias_handle_disabled_domain");
   });
 });

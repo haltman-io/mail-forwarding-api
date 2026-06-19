@@ -79,7 +79,8 @@ export class AliasRepository {
     const sqlBase = `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        WHERE a.goto = ?
        ORDER BY a.id DESC`;
 
@@ -172,7 +173,8 @@ export class AliasRepository {
       `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        WHERE a.address = ?
        LIMIT 1${lockClause}`,
       [address],
@@ -276,7 +278,8 @@ export class AliasRepository {
       `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id
        FROM alias a
        LEFT JOIN domain d
-         ON d.name = SUBSTRING_INDEX(a.address, '@', -1)
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
        WHERE a.address = ?
        FOR UPDATE`,
       [payload.address],
