@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import {
   normalizeLowerTrim,
@@ -55,33 +56,39 @@ export class HandleApiService {
 
     try {
       await this.databaseService.withTransaction(async (connection) => {
-        const locked = await this.handleRepository.existsByHandle(handle, connection, {
-          forUpdate: true,
-        });
-        if (locked) {
-          throw new PublicHttpException(409, { ok: false, error: "alias_taken" });
-        }
+        await withLocalPartRoutingLock(connection, handle, async () => {
+          const locked = await this.handleRepository.existsByHandle(handle, connection, {
+            forUpdate: true,
+          });
+          if (locked) {
+            throw new PublicHttpException(409, { ok: false, error: "alias_taken" });
+          }
 
-        const lockedAliases = await this.aliasRepository.findActiveByLocalPart(handle, connection, {
-          forUpdate: true,
-        });
-        this.assertAliasesOwnedBy(lockedAliases, ownerEmail);
+          const lockedAliases = await this.aliasRepository.findActiveByLocalPart(
+            handle,
+            connection,
+            {
+              forUpdate: true,
+            },
+          );
+          this.assertAliasesOwnedBy(lockedAliases, ownerEmail);
 
-        await this.handleRepository.createHandle(
-          { handle, address: ownerEmail, active: 1 },
-          connection,
-        );
-
-        if (lockedAliases.length > 0) {
-          const lockedAliasIds = lockedAliases.map((row) => row.id);
-          const deleted = await this.aliasRepository.deleteActiveByIdsAndOwner(
-            lockedAliasIds,
-            ownerEmail,
+          await this.handleRepository.createHandle(
+            { handle, address: ownerEmail, active: 1 },
             connection,
           );
-          this.assertConvertedAliasCount(deleted, lockedAliasIds.length);
-          convertedAliases = lockedAliases.map((row) => row.address);
-        }
+
+          if (lockedAliases.length > 0) {
+            const lockedAliasIds = lockedAliases.map((row) => row.id);
+            const deleted = await this.aliasRepository.deleteActiveByIdsAndOwner(
+              lockedAliasIds,
+              ownerEmail,
+              connection,
+            );
+            this.assertConvertedAliasCount(deleted, lockedAliasIds.length);
+            convertedAliases = lockedAliases.map((row) => row.address);
+          }
+        });
       });
     } catch (error) {
       if (isDuplicateEntry(error)) {

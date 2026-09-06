@@ -3,8 +3,10 @@ import { Injectable } from "@nestjs/common";
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { DatabaseService } from "../../../shared/database/database.service.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import {
   parseMailbox,
+  type ParsedMailbox,
 } from "../../../shared/validation/mailbox.js";
 import { BanPolicyService } from "../../bans/ban-policy.service.js";
 import { AdminAliasesRepository } from "./admin-aliases.repository.js";
@@ -88,55 +90,57 @@ export class AdminAliasesService {
 
     try {
       const row = await this.database.withTransaction(async (connection) => {
-        const reservedHandle = await this.adminAliasesRepository.existsReservedHandle(
-          address.local,
-          connection,
-          { forUpdate: true },
-        );
-        if (reservedHandle) {
-          throw new PublicHttpException(409, {
-            ok: false,
-            error: "alias_taken",
-            address: address.email,
-          });
-        }
+        return withLocalPartRoutingLock(connection, address.local, async () => {
+          const reservedHandle = await this.adminAliasesRepository.existsReservedHandle(
+            address.local,
+            connection,
+            { forUpdate: true },
+          );
+          if (reservedHandle) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_taken",
+              address: address.email,
+            });
+          }
 
-        const domainRow = await this.adminDomainsRepository.getEmailValidByName(
-          address.domain,
-          connection,
-        );
-        if (!domainRow) {
-          throw new PublicHttpException(400, {
-            error: "invalid_domain",
-            field: "address",
-          });
-        }
+          const domainRow = await this.adminDomainsRepository.getEmailValidByName(
+            address.domain,
+            connection,
+          );
+          if (!domainRow) {
+            throw new PublicHttpException(400, {
+              error: "invalid_domain",
+              field: "address",
+            });
+          }
 
-        const existing = await this.adminAliasesRepository.getByAddress(
-          address.email,
-          connection,
-          { forUpdate: true },
-        );
-        if (existing) {
-          throw new PublicHttpException(409, {
-            ok: false,
-            error: "alias_taken",
-            address: address.email,
-          });
-        }
+          const existing = await this.adminAliasesRepository.getByAddress(
+            address.email,
+            connection,
+            { forUpdate: true },
+          );
+          if (existing) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_taken",
+              address: address.email,
+            });
+          }
 
-        const created = await this.adminAliasesRepository.createAlias(
-          {
-            address: address.email,
-            goto: goto.email,
-            active,
-          },
-          connection,
-        );
+          const created = await this.adminAliasesRepository.createAlias(
+            {
+              address: address.email,
+              goto: goto.email,
+              active,
+            },
+            connection,
+          );
 
-        return created.insertId
-          ? this.adminAliasesRepository.getById(created.insertId, connection)
-          : null;
+          return created.insertId
+            ? this.adminAliasesRepository.getById(created.insertId, connection)
+            : null;
+        });
       });
 
       this.creationNotificationService.notifyAliasCreated({
@@ -161,135 +165,178 @@ export class AdminAliasesService {
     id: number,
     dto: AdminUpdateAliasDto,
   ): Promise<{ ok: true; updated: true; item: AdminAliasRow | null }> {
+    let requestedAddress: ParsedMailbox | undefined;
+    if (dto.address !== undefined) {
+      const parsed = parseMailbox(dto.address);
+      if (!parsed) {
+        throw new PublicHttpException(400, {
+          error: "invalid_params",
+          field: "address",
+        });
+      }
+      requestedAddress = parsed;
+    }
+
+    let requestedGoto: ParsedMailbox | undefined;
+    if (dto.goto !== undefined) {
+      const parsed = parseMailbox(dto.goto);
+      if (!parsed) {
+        throw new PublicHttpException(400, {
+          error: "invalid_params",
+          field: "goto",
+        });
+      }
+      requestedGoto = parsed;
+    }
+
     try {
       const row = await this.database.withTransaction(async (connection) => {
-        const current = await this.adminAliasesRepository.getById(id, connection, {
-          forUpdate: true,
-        });
-        if (!current) {
+        const snapshot = await this.adminAliasesRepository.getById(id, connection);
+        if (!snapshot) {
           throw new PublicHttpException(404, { error: "alias_not_found", id });
         }
 
-        const patch: { address?: string; goto?: string; active?: number } = {};
-        let nextAddress = String(current.address || "").trim().toLowerCase();
-        let nextGoto = String(current.goto || "").trim().toLowerCase();
-        let addressChanged = false;
-        let gotoChanged = false;
-
-        if (dto.address !== undefined) {
-          const parsed = parseMailbox(dto.address);
-          if (!parsed) {
-            throw new PublicHttpException(400, {
-              error: "invalid_params",
-              field: "address",
-            });
-          }
-
-          if (parsed.email !== nextAddress) {
-            const reservedHandle = await this.adminAliasesRepository.existsReservedHandle(
-              parsed.local,
-              connection,
-              { forUpdate: true },
-            );
-            if (reservedHandle) {
-              throw new PublicHttpException(409, {
-                ok: false,
-                error: "alias_taken",
-                address: parsed.email,
-              });
-            }
-
-            const domainRow = await this.adminDomainsRepository.getEmailValidByName(
-              parsed.domain,
-              connection,
-            );
-            if (!domainRow) {
-              throw new PublicHttpException(400, {
-                error: "invalid_domain",
-                field: "address",
-              });
-            }
-
-            const existing = await this.adminAliasesRepository.getByAddress(
-              parsed.email,
-              connection,
-              { forUpdate: true },
-            );
-            if (existing && Number(existing.id) !== id) {
-              throw new PublicHttpException(409, {
-                ok: false,
-                error: "alias_taken",
-                address: parsed.email,
-              });
-            }
-          }
-
-          patch.address = parsed.email;
-          nextAddress = parsed.email;
-          addressChanged = true;
+        const snapshotAddress = parseMailbox(snapshot.address);
+        if (!snapshotAddress) {
+          throw new PublicHttpException(500, {
+            error: "invalid_current_state",
+          });
         }
-
-        if (dto.goto !== undefined) {
-          const parsed = parseMailbox(dto.goto);
-          if (!parsed) {
-            throw new PublicHttpException(400, {
-              error: "invalid_params",
-              field: "goto",
-            });
-          }
-
-          patch.goto = parsed.email;
-          nextGoto = parsed.email;
-          gotoChanged = true;
-        }
-
-        if (dto.active !== undefined) {
-          patch.active = dto.active;
-        }
-
-        const nextActive =
-          patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
-
-        const nextParsedAddress = parseMailbox(nextAddress);
-        const nextParsedGoto = parseMailbox(nextGoto);
-        if (!nextParsedAddress || !nextParsedGoto) {
+        const snapshotGoto = parseMailbox(snapshot.goto);
+        if (!snapshotGoto) {
           throw new PublicHttpException(500, {
             error: "invalid_current_state",
           });
         }
 
-        if (addressChanged || gotoChanged || nextActive === 1) {
-          if (nextActive === 1) {
-            const reservedHandle = await this.adminAliasesRepository.existsReservedHandle(
-              nextParsedAddress.local,
-              connection,
-              { forUpdate: true },
-            );
-            if (reservedHandle) {
-              throw new PublicHttpException(409, {
-                ok: false,
-                error: "alias_taken",
-                address: nextParsedAddress.email,
-              });
-            }
+        const snapshotActive =
+          dto.active === 0 || dto.active === 1 ? dto.active : Number(snapshot.active || 0);
+        const lockLocalPart = requestedAddress?.local ?? snapshotAddress.local;
+        let hasRoutingLock = false;
+
+        const update = async () => {
+          const current = await this.adminAliasesRepository.getById(id, connection, {
+            forUpdate: true,
+          });
+          if (!current) {
+            throw new PublicHttpException(404, { error: "alias_not_found", id });
           }
 
-          await this.ensureAliasBans(
-            nextParsedAddress.local,
-            nextParsedAddress.domain,
-            nextParsedGoto.email,
-          );
-        }
+          const currentAddress = parseMailbox(current.address);
+          const currentGoto = parseMailbox(current.goto);
+          if (!currentAddress || !currentGoto) {
+            throw new PublicHttpException(500, {
+              error: "invalid_current_state",
+            });
+          }
 
-        if (Object.keys(patch).length === 0) {
-          throw new PublicHttpException(400, {
-            error: "invalid_params",
-            reason: "empty_patch",
-          });
-        }
+          const patch: { address?: string; goto?: string; active?: number } = {};
+          let nextParsedAddress = currentAddress;
+          let nextParsedGoto = currentGoto;
+          let addressChanged = false;
+          let gotoChanged = false;
 
-        await this.adminAliasesRepository.updateById(id, patch, connection);
-        return this.adminAliasesRepository.getById(id, connection);
+          if (requestedAddress !== undefined) {
+            if (requestedAddress.email !== currentAddress.email) {
+              const domainRow = await this.adminDomainsRepository.getEmailValidByName(
+                requestedAddress.domain,
+                connection,
+              );
+              if (!domainRow) {
+                throw new PublicHttpException(400, {
+                  error: "invalid_domain",
+                  field: "address",
+                });
+              }
+
+              const existing = await this.adminAliasesRepository.getByAddress(
+                requestedAddress.email,
+                connection,
+                { forUpdate: true },
+              );
+              if (existing && Number(existing.id) !== id) {
+                throw new PublicHttpException(409, {
+                  ok: false,
+                  error: "alias_taken",
+                  address: requestedAddress.email,
+                });
+              }
+            }
+
+            patch.address = requestedAddress.email;
+            nextParsedAddress = requestedAddress;
+            addressChanged = true;
+          }
+
+          if (requestedGoto !== undefined) {
+            patch.goto = requestedGoto.email;
+            nextParsedGoto = requestedGoto;
+            gotoChanged = true;
+          }
+
+          if (dto.active !== undefined) {
+            patch.active = dto.active;
+          }
+
+          const nextActive =
+            patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
+
+          if (Object.keys(patch).length === 0) {
+            throw new PublicHttpException(400, {
+              error: "invalid_params",
+              reason: "empty_patch",
+            });
+          }
+
+          if (nextActive === 1 && nextParsedAddress.local !== lockLocalPart) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_state_changed",
+              reason: "alias_local_part_changed",
+            });
+          }
+
+          if (nextActive === 1 && !hasRoutingLock) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_state_changed",
+              reason: "alias_active_state_changed",
+            });
+          }
+
+          if (addressChanged || gotoChanged || nextActive === 1) {
+            if (nextActive === 1) {
+              const reservedHandle = await this.adminAliasesRepository.existsReservedHandle(
+                nextParsedAddress.local,
+                connection,
+                { forUpdate: true },
+              );
+              if (reservedHandle) {
+                throw new PublicHttpException(409, {
+                  ok: false,
+                  error: "alias_taken",
+                  address: nextParsedAddress.email,
+                });
+              }
+            }
+
+            await this.ensureAliasBans(
+              nextParsedAddress.local,
+              nextParsedAddress.domain,
+              nextParsedGoto.email,
+            );
+          }
+
+          await this.adminAliasesRepository.updateById(id, patch, connection);
+          return this.adminAliasesRepository.getById(id, connection);
+        };
+
+        return snapshotActive === 1
+          ? withLocalPartRoutingLock(connection, lockLocalPart, async () => {
+              hasRoutingLock = true;
+              return update();
+            })
+          : update();
       });
 
       return { ok: true, updated: true, item: row };
@@ -314,12 +361,11 @@ export class AdminAliasesService {
         throw new PublicHttpException(404, { error: "alias_not_found", id });
       }
 
-      const deleted = await this.adminAliasesRepository.deactivateById(id, connection);
-      const item = await this.adminAliasesRepository.getById(id, connection);
+      const deleted = await this.adminAliasesRepository.deleteById(id, connection);
 
       return {
         deleted: Boolean(deleted),
-        item: item ?? current,
+        item: current,
       };
     });
 

@@ -7,7 +7,17 @@ import { createMockRequest, createMockResponse } from "./http-mocks.js";
 describe("ForwardingController.confirm", () => {
   const token = "123456";
 
+  function createTxConnection() {
+    return {
+      tx: true,
+      query: jest.fn((sql: string) =>
+        Promise.resolve(sql.includes("GET_LOCK") ? [{ acquired: 1 }] : [{ released: 1 }]),
+      ),
+    };
+  }
+
   function createServiceAndController() {
+    const connection = createTxConnection();
     const emailConfirmationService = {} as never;
     const emailConfirmationsRepository = {
       getPendingByTokenHash: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -31,7 +41,7 @@ describe("ForwardingController.confirm", () => {
     const configService = {} as never;
     const databaseService = {
       withTransaction: jest.fn(async (work: (connection: object) => Promise<unknown>) =>
-        work({ tx: true }),
+        work(connection),
       ),
     };
     const logger = {
@@ -49,9 +59,7 @@ describe("ForwardingController.confirm", () => {
       logger as never,
     );
 
-    const controller = new ForwardingController(
-      forwardingService as never,
-    );
+    const controller = new ForwardingController(forwardingService);
 
     return {
       controller,
@@ -60,6 +68,7 @@ describe("ForwardingController.confirm", () => {
       domainRepository,
       banPolicyService,
       logger,
+      connection,
     };
   }
 

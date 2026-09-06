@@ -2,10 +2,20 @@ import { jest } from "@jest/globals";
 
 import { AdminHandlesService } from "../src/modules/admin/handles/admin-handles.service.js";
 
+function createTxConnection() {
+  return {
+    tx: true,
+    query: jest.fn((sql: string) =>
+      Promise.resolve(sql.includes("GET_LOCK") ? [{ acquired: 1 }] : [{ released: 1 }]),
+    ),
+  };
+}
+
 function createService() {
+  const connection = createTxConnection();
   const database = {
     withTransaction: jest.fn(
-      async (work: (connection: object) => Promise<unknown>) => work({ tx: true }),
+      async (work: (connection: object) => Promise<unknown>) => work(connection),
     ),
   };
   const adminHandlesRepository = {
@@ -13,6 +23,9 @@ function createService() {
     getById: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     createHandle: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     updateById: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  };
+  const adminAliasesRepository = {
+    existsActiveAliasByLocalPart: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
   };
   const banPolicyService = {
     findActiveNameBan: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -26,6 +39,7 @@ function createService() {
   const service = new AdminHandlesService(
     database as never,
     adminHandlesRepository as never,
+    adminAliasesRepository as never,
     banPolicyService as never,
     creationNotificationService as never,
   );
@@ -34,17 +48,48 @@ function createService() {
     service,
     database,
     adminHandlesRepository,
+    adminAliasesRepository,
     banPolicyService,
+    connection,
   };
 }
 
 describe("AdminHandlesService", () => {
-  it("creates an active handle even when an alias already uses the same local part", async () => {
-    const { service, adminHandlesRepository, banPolicyService } = createService();
+  it("rejects handle creation when an active alias already uses the same local part", async () => {
+    const { service, adminHandlesRepository, adminAliasesRepository, banPolicyService } =
+      createService();
 
     banPolicyService.findActiveNameBan.mockResolvedValue(null);
     banPolicyService.findActiveEmailOrDomainBan.mockResolvedValue(null);
     adminHandlesRepository.getByHandle.mockResolvedValue(null);
+    adminAliasesRepository.existsActiveAliasByLocalPart.mockResolvedValue(true);
+
+    await expect(
+      service.createHandle({
+        handle: "sales",
+        address: "owner@example.com",
+        active: 1,
+      }),
+    ).rejects.toMatchObject({
+      response: { error: "alias_taken", handle: "sales" },
+    });
+
+    expect(adminAliasesRepository.existsActiveAliasByLocalPart).toHaveBeenCalledWith(
+      "sales",
+      expect.any(Object),
+      { forUpdate: true },
+    );
+    expect(adminHandlesRepository.createHandle).not.toHaveBeenCalled();
+  });
+
+  it("creates an active handle when no alias uses the same local part", async () => {
+    const { service, adminHandlesRepository, adminAliasesRepository, banPolicyService } =
+      createService();
+
+    banPolicyService.findActiveNameBan.mockResolvedValue(null);
+    banPolicyService.findActiveEmailOrDomainBan.mockResolvedValue(null);
+    adminHandlesRepository.getByHandle.mockResolvedValue(null);
+    adminAliasesRepository.existsActiveAliasByLocalPart.mockResolvedValue(false);
     adminHandlesRepository.createHandle.mockResolvedValue({
       ok: true,
       insertId: 14,
@@ -82,8 +127,9 @@ describe("AdminHandlesService", () => {
     );
   });
 
-  it("allows reactivating a handle even when an alias already uses the same local part", async () => {
-    const { service, adminHandlesRepository, banPolicyService } = createService();
+  it("rejects reactivating a handle when an active alias already uses the same local part", async () => {
+    const { service, adminHandlesRepository, adminAliasesRepository, banPolicyService } =
+      createService();
 
     banPolicyService.findActiveNameBan.mockResolvedValue(null);
     banPolicyService.findActiveEmailOrDomainBan.mockResolvedValue(null);
@@ -100,24 +146,17 @@ describe("AdminHandlesService", () => {
         address: "owner@example.com",
         active: 1,
       });
-    adminHandlesRepository.updateById.mockResolvedValue(true);
+    adminAliasesRepository.existsActiveAliasByLocalPart.mockResolvedValue(true);
 
-    const result = await service.updateHandle(14, { active: 1 });
-
-    expect(result).toEqual({
-      ok: true,
-      updated: true,
-      item: {
-        id: 14,
-        handle: "sales",
-        address: "owner@example.com",
-        active: 1,
-      },
+    await expect(service.updateHandle(14, { active: 1 })).rejects.toMatchObject({
+      response: { error: "alias_taken", handle: "sales" },
     });
-    expect(adminHandlesRepository.updateById).toHaveBeenCalledWith(
-      14,
-      { active: 1 },
+
+    expect(adminAliasesRepository.existsActiveAliasByLocalPart).toHaveBeenCalledWith(
+      "sales",
       expect.any(Object),
+      { forUpdate: true },
     );
+    expect(adminHandlesRepository.updateById).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,17 @@ import { jest } from "@jest/globals";
 import { HandleApiService } from "../src/modules/handle/services/handle-api.service.js";
 import { PublicHttpException } from "../src/shared/errors/public-http.exception.js";
 
+function createTxConnection() {
+  return {
+    tx: true,
+    query: jest.fn((sql: string) =>
+      Promise.resolve(sql.includes("GET_LOCK") ? [{ acquired: 1 }] : [{ released: 1 }]),
+    ),
+  };
+}
+
 function createService() {
+  const connection = createTxConnection();
   const handleRepository = {
     existsByHandle: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     createHandle: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -24,7 +34,7 @@ function createService() {
   };
   const databaseService = {
     withTransaction: jest.fn(
-      async (work: (connection: object) => Promise<unknown>) => work({ tx: true }),
+      async (work: (connection: object) => Promise<unknown>) => work(connection),
     ),
   };
 
@@ -43,6 +53,7 @@ function createService() {
     aliasRepository,
     banPolicyService,
     databaseService,
+    connection,
   };
 }
 

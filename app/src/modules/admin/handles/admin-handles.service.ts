@@ -1,14 +1,17 @@
 import { Injectable } from "@nestjs/common";
+import type { PoolConnection } from "mariadb";
 
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { DatabaseService } from "../../../shared/database/database.service.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import {
   isValidLocalPart,
   parseMailbox,
   normalizeLowerTrim,
 } from "../../../shared/validation/mailbox.js";
 import { BanPolicyService } from "../../bans/ban-policy.service.js";
+import { AdminAliasesRepository } from "../aliases/admin-aliases.repository.js";
 import { AdminCreationNotificationService } from "../utils/admin-creation-notification.service.js";
 import { AdminHandlesRepository } from "./admin-handles.repository.js";
 import type { AdminHandleRow } from "./admin-handles.repository.js";
@@ -23,6 +26,7 @@ export class AdminHandlesService {
   constructor(
     private readonly database: DatabaseService,
     private readonly adminHandlesRepository: AdminHandlesRepository,
+    private readonly adminAliasesRepository: AdminAliasesRepository,
     private readonly banPolicyService: BanPolicyService,
     private readonly creationNotificationService: AdminCreationNotificationService,
   ) {}
@@ -84,21 +88,25 @@ export class AdminHandlesService {
 
     try {
       const row = await this.database.withTransaction(async (connection) => {
-        const existing = await this.adminHandlesRepository.getByHandle(handle, connection, {
-          forUpdate: true,
+        return withLocalPartRoutingLock(connection, handle, async () => {
+          const existing = await this.adminHandlesRepository.getByHandle(handle, connection, {
+            forUpdate: true,
+          });
+          if (existing) {
+            throw new PublicHttpException(409, { error: "handle_taken", handle });
+          }
+
+          await this.ensureNoActiveAliasLocalPart(handle, connection);
+
+          const created = await this.adminHandlesRepository.createHandle(
+            { handle, address: address.email, active },
+            connection,
+          );
+
+          return created.insertId
+            ? this.adminHandlesRepository.getById(created.insertId, connection)
+            : null;
         });
-        if (existing) {
-          throw new PublicHttpException(409, { error: "handle_taken", handle });
-        }
-
-        const created = await this.adminHandlesRepository.createHandle(
-          { handle, address: address.email, active },
-          connection,
-        );
-
-        return created.insertId
-          ? this.adminHandlesRepository.getById(created.insertId, connection)
-          : null;
       });
 
       this.creationNotificationService.notifyHandleCreated({
@@ -119,76 +127,129 @@ export class AdminHandlesService {
     id: number,
     dto: AdminUpdateHandleDto,
   ): Promise<{ ok: true; updated: true; item: AdminHandleRow | null }> {
+    let requestedHandle: string | undefined;
+    if (dto.handle !== undefined) {
+      const parsed = normalizeLowerTrim(dto.handle);
+      if (!parsed || !isValidLocalPart(parsed)) {
+        throw new PublicHttpException(400, {
+          error: "invalid_params",
+          field: "handle",
+        });
+      }
+      requestedHandle = parsed;
+    }
+
+    let requestedAddress: string | undefined;
+    if (dto.address !== undefined) {
+      const parsed = parseMailbox(dto.address);
+      if (!parsed) {
+        throw new PublicHttpException(400, {
+          error: "invalid_params",
+          field: "address",
+        });
+      }
+      requestedAddress = parsed.email;
+    }
+
     try {
       const row = await this.database.withTransaction(async (connection) => {
-        const current = await this.adminHandlesRepository.getById(id, connection, {
-          forUpdate: true,
-        });
-        if (!current) {
+        const snapshot = await this.adminHandlesRepository.getById(id, connection);
+        if (!snapshot) {
           throw new PublicHttpException(404, { error: "handle_not_found", id });
         }
 
-        const patch: { handle?: string; address?: string; active?: number } = {};
-        let nextHandle = String(current.handle || "").trim().toLowerCase();
-        let nextAddress = String(current.address || "").trim().toLowerCase();
-        let handleChanged = false;
-        let addressChanged = false;
+        const snapshotHandle = String(snapshot.handle || "").trim().toLowerCase();
+        const snapshotActive =
+          dto.active === 0 || dto.active === 1 ? dto.active : Number(snapshot.active || 0);
+        const lockHandle = requestedHandle ?? snapshotHandle;
+        let hasRoutingLock = false;
 
-        if (dto.handle !== undefined) {
-          const parsed = normalizeLowerTrim(dto.handle);
-          if (!parsed || !isValidLocalPart(parsed)) {
-            throw new PublicHttpException(400, {
-              error: "invalid_params",
-              field: "handle",
-            });
-          }
-
-          const conflict = await this.adminHandlesRepository.getByHandle(parsed, connection, {
+        const update = async () => {
+          const current = await this.adminHandlesRepository.getById(id, connection, {
             forUpdate: true,
           });
-          if (conflict && Number(conflict.id) !== id) {
-            throw new PublicHttpException(409, { error: "handle_taken", handle: parsed });
+          if (!current) {
+            throw new PublicHttpException(404, { error: "handle_not_found", id });
           }
 
-          patch.handle = parsed;
-          nextHandle = parsed;
-          handleChanged = true;
-        }
+          const patch: { handle?: string; address?: string; active?: number } = {};
+          let nextHandle = String(current.handle || "").trim().toLowerCase();
+          let nextAddress = String(current.address || "").trim().toLowerCase();
+          let handleChanged = false;
+          let addressChanged = false;
 
-        if (dto.address !== undefined) {
-          const parsed = parseMailbox(dto.address);
-          if (!parsed) {
+          if (requestedHandle !== undefined) {
+            const conflict = await this.adminHandlesRepository.getByHandle(
+              requestedHandle,
+              connection,
+              { forUpdate: true },
+            );
+            if (conflict && Number(conflict.id) !== id) {
+              throw new PublicHttpException(409, {
+                error: "handle_taken",
+                handle: requestedHandle,
+              });
+            }
+
+            patch.handle = requestedHandle;
+            nextHandle = requestedHandle;
+            handleChanged = true;
+          }
+
+          if (requestedAddress !== undefined) {
+            patch.address = requestedAddress;
+            nextAddress = requestedAddress;
+            addressChanged = true;
+          }
+
+          if (dto.active !== undefined) {
+            patch.active = dto.active;
+          }
+
+          const nextActive =
+            patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
+
+          if (Object.keys(patch).length === 0) {
             throw new PublicHttpException(400, {
               error: "invalid_params",
-              field: "address",
+              reason: "empty_patch",
             });
           }
 
-          patch.address = parsed.email;
-          nextAddress = parsed.email;
-          addressChanged = true;
-        }
+          if (nextActive === 1 && nextHandle !== lockHandle) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_state_changed",
+              reason: "handle_local_part_changed",
+            });
+          }
 
-        if (dto.active !== undefined) {
-          patch.active = dto.active;
-        }
+          if (nextActive === 1 && !hasRoutingLock) {
+            throw new PublicHttpException(409, {
+              ok: false,
+              error: "alias_state_changed",
+              reason: "handle_active_state_changed",
+            });
+          }
 
-        const nextActive =
-          patch.active === 0 || patch.active === 1 ? patch.active : Number(current.active || 0);
+          if (nextActive === 1) {
+            await this.ensureNoActiveAliasLocalPart(nextHandle, connection);
+          }
 
-        if (handleChanged || addressChanged || nextActive === 1) {
-          await this.ensureHandleBans(nextHandle, nextAddress);
-        }
+          if (handleChanged || addressChanged || nextActive === 1) {
+            await this.ensureHandleBans(nextHandle, nextAddress);
+          }
 
-        if (Object.keys(patch).length === 0) {
-          throw new PublicHttpException(400, {
-            error: "invalid_params",
-            reason: "empty_patch",
-          });
-        }
+          await this.adminHandlesRepository.updateById(id, patch, connection);
+          return this.adminHandlesRepository.getById(id, connection);
+        };
 
-        await this.adminHandlesRepository.updateById(id, patch, connection);
-        return this.adminHandlesRepository.getById(id, connection);
+        return snapshotActive === 1
+          ? withLocalPartRoutingLock(connection, lockHandle, async () => {
+              hasRoutingLock = true;
+              return update();
+            })
+          : update();
       });
 
       return { ok: true, updated: true, item: row };
@@ -224,6 +285,20 @@ export class AdminHandlesService {
     const banAddress = await this.banPolicyService.findActiveEmailOrDomainBan(address);
     if (banAddress) {
       throw new PublicHttpException(403, { error: "banned", ban: banAddress });
+    }
+  }
+
+  private async ensureNoActiveAliasLocalPart(
+    handle: string,
+    connection?: PoolConnection,
+  ): Promise<void> {
+    const aliasExists = await this.adminAliasesRepository.existsActiveAliasByLocalPart(
+      handle,
+      connection,
+      { forUpdate: true },
+    );
+    if (aliasExists) {
+      throw new PublicHttpException(409, { error: "alias_taken", handle });
     }
   }
 

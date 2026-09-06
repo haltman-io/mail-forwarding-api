@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import {
@@ -126,28 +127,30 @@ export class AliasService {
 
     try {
       await this.databaseService.withTransaction(async (connection) => {
-        const reservedHandle = await this.aliasRepository.existsReservedHandle(
-          aliasHandle,
-          connection,
-          { forUpdate: true },
-        );
-        if (reservedHandle) {
-          throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
-        }
+        await withLocalPartRoutingLock(connection, aliasHandle, async () => {
+          const reservedHandle = await this.aliasRepository.existsReservedHandle(
+            aliasHandle,
+            connection,
+            { forUpdate: true },
+          );
+          if (reservedHandle) {
+            throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+          }
 
-        const created = await this.aliasRepository.createIfNotExists(
-          {
-            address,
-            goto: ownerEmail,
-            domainId: domainRow.id,
-            active: 1,
-          },
-          connection,
-        );
+          const created = await this.aliasRepository.createIfNotExists(
+            {
+              address,
+              goto: ownerEmail,
+              domainId: domainRow.id,
+              active: 1,
+            },
+            connection,
+          );
 
-        if (created.alreadyExists) {
-          throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
-        }
+          if (created.alreadyExists) {
+            throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+          }
+        });
       });
     } catch (error) {
       if (isDuplicateEntry(error)) {

@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import axios from "axios";
 
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
+import { DatabaseService } from "../../../shared/database/database.service.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import {
@@ -27,6 +28,7 @@ export interface AdminDnsRecheckResult {
 @Injectable()
 export class AdminDomainsService {
   constructor(
+    private readonly database: DatabaseService,
     private readonly adminDomainsRepository: AdminDomainsRepository,
     private readonly banPolicyService: BanPolicyService,
     private readonly checkDnsClient: CheckDnsClient,
@@ -184,18 +186,23 @@ export class AdminDomainsService {
     deleted: boolean;
     item: AdminDomainRow;
   }> {
-    const current = await this.adminDomainsRepository.getById(id);
-    if (!current) {
-      throw new PublicHttpException(404, { error: "domain_not_found", id });
-    }
+    const result = await this.database.withTransaction(async (connection) => {
+      const current = await this.adminDomainsRepository.getById(id, connection, {
+        forUpdate: true,
+      });
+      if (!current) {
+        throw new PublicHttpException(404, { error: "domain_not_found", id });
+      }
 
-    const deleted = await this.adminDomainsRepository.deleteById(id);
+      const deleted = await this.adminDomainsRepository.deleteById(id, connection);
 
-    return {
-      ok: true,
-      deleted: Boolean(deleted),
-      item: current,
-    };
+      return {
+        deleted: Boolean(deleted),
+        item: current,
+      };
+    });
+
+    return { ok: true, ...result };
   }
 
   async recheckAllDomains(): Promise<AdminDnsRecheckResult> {

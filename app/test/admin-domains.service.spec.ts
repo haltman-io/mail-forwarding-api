@@ -5,6 +5,11 @@ import { PublicHttpException } from "../src/shared/errors/public-http.exception.
 
 describe("AdminDomainsService", () => {
   function createService() {
+    const database = {
+      withTransaction: jest.fn(async (work: (connection: object) => Promise<unknown>) =>
+        work({ tx: true }),
+      ),
+    };
     const adminDomainsRepository = {
       listAll: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
       countAll: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -28,11 +33,13 @@ describe("AdminDomainsService", () => {
 
     return {
       service: new AdminDomainsService(
+        database as never,
         adminDomainsRepository as never,
         banPolicyService as never,
         checkDnsClient as never,
         logger as never,
       ),
+      database,
       adminDomainsRepository,
       banPolicyService,
       checkDnsClient,
@@ -153,5 +160,38 @@ describe("AdminDomainsService", () => {
 
     await expect(service.recheckDomain(999)).rejects.toBeInstanceOf(PublicHttpException);
     expect(checkDnsClient.recheckDomain).not.toHaveBeenCalled();
+  });
+
+  it("hard deletes domains in a transaction instead of soft-deactivating them", async () => {
+    const { service, database, adminDomainsRepository } = createService();
+    adminDomainsRepository.getById.mockResolvedValueOnce({
+      id: 10,
+      name: "example.com",
+      active: 0,
+      active_mx: 0,
+      active_ui: 0,
+      visible: 0,
+    });
+    adminDomainsRepository.deleteById.mockResolvedValue(true);
+
+    await expect(service.deleteDomain(10)).resolves.toEqual({
+      ok: true,
+      deleted: true,
+      item: {
+        id: 10,
+        name: "example.com",
+        active: 0,
+        active_mx: 0,
+        active_ui: 0,
+        visible: 0,
+      },
+    });
+
+    expect(database.withTransaction).toHaveBeenCalledTimes(1);
+    expect(adminDomainsRepository.getById).toHaveBeenCalledWith(10, expect.any(Object), {
+      forUpdate: true,
+    });
+    expect(adminDomainsRepository.deleteById).toHaveBeenCalledWith(10, expect.any(Object));
+    expect(adminDomainsRepository.updateById).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import { sha256Buffer } from "../../../shared/utils/crypto.js";
@@ -475,23 +476,58 @@ export class ForwardingService {
       createPayload.domainId = domainRow.id;
     }
 
-    return this.databaseService.withTransaction(async (connection) => {
-      const lockedPending = await this.emailConfirmationsRepository.getPendingByTokenHash(
-        tokenHash32,
-        connection,
-        { forUpdate: true },
-      );
-      if (!lockedPending) {
-        return { status: 400, body: { ok: false, error: "invalid_or_expired" } };
-      }
-
-      const existing = await this.aliasRepository.getByAddress(address, connection, { forUpdate: true });
-      if (existing && existing.id) {
-        const currentGoto = String(existing.goto || "").trim().toLowerCase();
-        if (currentGoto && currentGoto !== toEmail) {
-          return { status: 409, body: { ok: false, error: "alias_owner_changed", address } };
+    return this.databaseService.withTransaction(async (connection) =>
+      withLocalPartRoutingLock(connection, aliasName, async () => {
+        const lockedPending = await this.emailConfirmationsRepository.getPendingByTokenHash(
+          tokenHash32,
+          connection,
+          { forUpdate: true },
+        );
+        if (!lockedPending) {
+          return { status: 400, body: { ok: false, error: "invalid_or_expired" } };
         }
 
+        const existing = await this.aliasRepository.getByAddress(address, connection, {
+          forUpdate: true,
+        });
+        if (existing && existing.id) {
+          const currentGoto = String(existing.goto || "").trim().toLowerCase();
+          if (currentGoto && currentGoto !== toEmail) {
+            return { status: 409, body: { ok: false, error: "alias_owner_changed", address } };
+          }
+
+          const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
+            lockedPending.id,
+            connection,
+          );
+          if (!confirmed) {
+            throw new Error("forward_confirm_commit_failed");
+          }
+
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              confirmed: true,
+              intent,
+              created: false,
+              reason: "already_exists",
+              address,
+              goto: toEmail,
+            },
+          };
+        }
+
+        const reservedHandle = await this.aliasRepository.existsReservedHandle(
+          aliasName,
+          connection,
+          { forUpdate: true },
+        );
+        if (reservedHandle) {
+          return { status: 409, body: { ok: false, error: "alias_taken", address } };
+        }
+
+        const created = await this.aliasRepository.createIfNotExists(createPayload, connection);
         const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
           lockedPending.id,
           connection,
@@ -500,65 +536,34 @@ export class ForwardingService {
           throw new Error("forward_confirm_commit_failed");
         }
 
+        if (!created.created) {
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              confirmed: true,
+              intent,
+              created: false,
+              reason: "already_exists",
+              address,
+              goto: toEmail,
+            },
+          };
+        }
+
         return {
           status: 200,
           body: {
             ok: true,
             confirmed: true,
             intent,
-            created: false,
-            reason: "already_exists",
+            created: true,
             address,
             goto: toEmail,
           },
         };
-      }
-
-      const reservedHandle = await this.aliasRepository.existsReservedHandle(
-        aliasName,
-        connection,
-        { forUpdate: true },
-      );
-      if (reservedHandle) {
-        return { status: 409, body: { ok: false, error: "alias_taken", address } };
-      }
-
-      const created = await this.aliasRepository.createIfNotExists(createPayload, connection);
-      const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
-        lockedPending.id,
-        connection,
-      );
-      if (!confirmed) {
-        throw new Error("forward_confirm_commit_failed");
-      }
-
-      if (!created.created) {
-        return {
-          status: 200,
-          body: {
-            ok: true,
-            confirmed: true,
-            intent,
-            created: false,
-            reason: "already_exists",
-            address,
-            goto: toEmail,
-          },
-        };
-      }
-
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          confirmed: true,
-          intent,
-          created: true,
-          address,
-          goto: toEmail,
-        },
-      };
-    });
+      }),
+    );
   }
 
   private async checkBans(aliasName: string, aliasDomain: string, destinationEmail: string): Promise<void> {

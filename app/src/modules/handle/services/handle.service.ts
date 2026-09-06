@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
 import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
+import { withLocalPartRoutingLock } from "../../../shared/database/local-part-routing-lock.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { sha256Buffer } from "../../../shared/utils/crypto.js";
 import {
@@ -312,85 +313,87 @@ export class HandleService {
     const handle = String(pending.alias_name).trim().toLowerCase();
     const toEmail = String(pending.email).trim().toLowerCase();
 
-    return this.databaseService.withTransaction(async (connection) => {
-      const lockedPending = await this.emailConfirmationsRepository.getPendingByTokenHash(
-        tokenHash32,
-        connection,
-        { forUpdate: true },
-      );
-      if (!lockedPending) {
-        return { status: 400, body: { ok: false, error: "invalid_or_expired" } };
-      }
+    return this.databaseService.withTransaction(async (connection) =>
+      withLocalPartRoutingLock(connection, handle, async () => {
+        const lockedPending = await this.emailConfirmationsRepository.getPendingByTokenHash(
+          tokenHash32,
+          connection,
+          { forUpdate: true },
+        );
+        if (!lockedPending) {
+          return { status: 400, body: { ok: false, error: "invalid_or_expired" } };
+        }
 
-      const existsHandle = await this.handleRepository.existsByHandle(handle, connection, {
-        forUpdate: true,
-      });
-      if (existsHandle) {
-        return { status: 409, body: { ok: false, error: "alias_taken" } };
-      }
-
-      const activeAliases = await this.aliasRepository.findActiveByLocalPart(handle, connection, {
-        forUpdate: true,
-      });
-      if (activeAliases.length > 0) {
-        if (this.hasAliasOwnerConflict(activeAliases, toEmail)) {
+        const existsHandle = await this.handleRepository.existsByHandle(handle, connection, {
+          forUpdate: true,
+        });
+        if (existsHandle) {
           return { status: 409, body: { ok: false, error: "alias_taken" } };
         }
-      }
 
-      const banName = await this.banPolicyService.findActiveNameBan(handle);
-      if (banName) {
-        return { status: 403, body: { error: "banned", ban: banName } };
-      }
-
-      const banEmail = await this.banPolicyService.findActiveEmailOrDomainBan(toEmail);
-      if (banEmail) {
-        return { status: 403, body: { error: "banned", ban: banEmail } };
-      }
-
-      try {
-        await this.handleRepository.createHandle(
-          { handle, address: toEmail, active: 1 },
-          connection,
-        );
-      } catch (error) {
-        if (isDuplicateEntry(error)) {
-          return { status: 409, body: { ok: false, error: "alias_taken" } };
+        const activeAliases = await this.aliasRepository.findActiveByLocalPart(handle, connection, {
+          forUpdate: true,
+        });
+        if (activeAliases.length > 0) {
+          if (this.hasAliasOwnerConflict(activeAliases, toEmail)) {
+            return { status: 409, body: { ok: false, error: "alias_taken" } };
+          }
         }
-        throw error;
-      }
 
-      let convertedAliases: string[] = [];
-      if (activeAliases.length > 0) {
-        const activeAliasIds = activeAliases.map((row) => row.id);
-        const deleted = await this.aliasRepository.deleteActiveByIdsAndOwner(
-          activeAliasIds,
-          toEmail,
+        const banName = await this.banPolicyService.findActiveNameBan(handle);
+        if (banName) {
+          return { status: 403, body: { error: "banned", ban: banName } };
+        }
+
+        const banEmail = await this.banPolicyService.findActiveEmailOrDomainBan(toEmail);
+        if (banEmail) {
+          return { status: 403, body: { error: "banned", ban: banEmail } };
+        }
+
+        try {
+          await this.handleRepository.createHandle(
+            { handle, address: toEmail, active: 1 },
+            connection,
+          );
+        } catch (error) {
+          if (isDuplicateEntry(error)) {
+            return { status: 409, body: { ok: false, error: "alias_taken" } };
+          }
+          throw error;
+        }
+
+        let convertedAliases: string[] = [];
+        if (activeAliases.length > 0) {
+          const activeAliasIds = activeAliases.map((row) => row.id);
+          const deleted = await this.aliasRepository.deleteActiveByIdsAndOwner(
+            activeAliasIds,
+            toEmail,
+            connection,
+          );
+          this.assertConvertedAliasCount(deleted, activeAliasIds.length);
+          convertedAliases = activeAliases.map((row) => row.address);
+        }
+
+        const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
+          lockedPending.id,
           connection,
         );
-        this.assertConvertedAliasCount(deleted, activeAliasIds.length);
-        convertedAliases = activeAliases.map((row) => row.address);
-      }
+        if (!confirmed) {
+          throw new Error("handle_confirm_commit_failed");
+        }
 
-      const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
-        lockedPending.id,
-        connection,
-      );
-      if (!confirmed) {
-        throw new Error("handle_confirm_commit_failed");
-      }
-
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          created: true,
-          handle,
-          goto: toEmail,
-          ...(convertedAliases.length > 0 ? { converted_aliases: convertedAliases } : {}),
-        },
-      };
-    });
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            created: true,
+            handle,
+            goto: toEmail,
+            ...(convertedAliases.length > 0 ? { converted_aliases: convertedAliases } : {}),
+          },
+        };
+      }),
+    );
   }
 
   private async confirmUnsubscribe(

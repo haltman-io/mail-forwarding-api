@@ -281,6 +281,19 @@ export class AdminAliasesRepository {
     return Boolean(result?.affectedRows === 1);
   }
 
+  async deleteById(id: number, connection?: PoolConnection): Promise<boolean> {
+    const executor = connection ?? this.database;
+    const result = await runQuery<InsertResult>(
+      executor,
+      `DELETE FROM alias
+       WHERE id = ?
+       LIMIT 1`,
+      [id],
+    );
+
+    return Boolean(result?.affectedRows === 1);
+  }
+
   async existsReservedHandle(
     handle: string,
     connection?: PoolConnection,

@@ -5,7 +5,6 @@ import { AdminHandlesService } from "../src/modules/admin/handles/admin-handles.
 import { AdminBansService } from "../src/modules/admin/bans/admin-bans.service.js";
 import { AdminApiTokensService } from "../src/modules/admin/api-tokens/admin-api-tokens.service.js";
 import { AdminDomainsService } from "../src/modules/admin/domains/admin-domains.service.js";
-import { PERMANENT_ALIAS_GOTO } from "../src/shared/utils/alias-policy.js";
 
 describe("Admin delete services", () => {
   it("physically deletes domains and returns the existing row snapshot", async () => {
@@ -19,6 +18,11 @@ describe("Admin delete services", () => {
     };
     const getById = jest.fn<(id: number) => Promise<DomainRow | null>>();
     const deleteById = jest.fn<(id: number) => Promise<boolean>>();
+    const databaseService = {
+      withTransaction: jest.fn(async (work: (connection: object) => Promise<unknown>) =>
+        work({ tx: true }),
+      ),
+    };
     const adminDomainsRepository = { getById, deleteById };
     getById.mockResolvedValueOnce({
       id: 4,
@@ -30,6 +34,7 @@ describe("Admin delete services", () => {
     });
     deleteById.mockResolvedValue(true);
     const service = new AdminDomainsService(
+      databaseService as never,
       adminDomainsRepository as never,
       {} as never,
       {} as never,
@@ -38,7 +43,10 @@ describe("Admin delete services", () => {
 
     const result = await service.deleteDomain(4);
 
-    expect(adminDomainsRepository.deleteById).toHaveBeenCalledWith(4);
+    expect(adminDomainsRepository.getById).toHaveBeenCalledWith(4, expect.any(Object), {
+      forUpdate: true,
+    });
+    expect(adminDomainsRepository.deleteById).toHaveBeenCalledWith(4, expect.any(Object));
     expect(result).toEqual({
       ok: true,
       deleted: true,
@@ -53,11 +61,11 @@ describe("Admin delete services", () => {
     });
   });
 
-  it("deactivates aliases permanently and physically deletes handles", async () => {
+  it("physically deletes aliases and handles from admin CRUD", async () => {
     type AliasRow = { id: number; address: string; goto: string; active: number };
     type HandleRow = { id: number; handle: string; address: string; active: number };
     const aliasGetById = jest.fn<(id: number) => Promise<AliasRow | null>>();
-    const aliasDeactivateById = jest.fn<(id: number) => Promise<boolean>>();
+    const aliasDeleteById = jest.fn<(id: number) => Promise<boolean>>();
     const handleGetById = jest.fn<(id: number) => Promise<HandleRow | null>>();
     const handleDeleteById = jest.fn<(id: number) => Promise<boolean>>();
     const databaseService = {
@@ -67,26 +75,19 @@ describe("Admin delete services", () => {
     };
     const adminAliasesRepository = {
       getById: aliasGetById,
-      deactivateById: aliasDeactivateById,
+      deleteById: aliasDeleteById,
     };
     const adminHandlesRepository = {
       getById: handleGetById,
       deleteById: handleDeleteById,
     };
-    aliasGetById
-      .mockResolvedValueOnce({
-        id: 11,
-        address: "sales@example.com",
-        goto: "owner@example.com",
-        active: 1,
-      })
-      .mockResolvedValueOnce({
-        id: 11,
-        address: "sales@example.com",
-        goto: PERMANENT_ALIAS_GOTO,
-        active: 0,
-      });
-    aliasDeactivateById.mockResolvedValue(true);
+    aliasGetById.mockResolvedValueOnce({
+      id: 11,
+      address: "sales@example.com",
+      goto: "owner@example.com",
+      active: 1,
+    });
+    aliasDeleteById.mockResolvedValue(true);
     handleGetById.mockResolvedValueOnce({
       id: 12,
       handle: "sales",
@@ -107,12 +108,13 @@ describe("Admin delete services", () => {
       adminHandlesRepository as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     const aliasResult = await aliasesService.deleteAlias(11);
     const handleResult = await handlesService.deleteHandle(12);
 
-    expect(aliasDeactivateById).toHaveBeenCalledWith(11, expect.anything());
+    expect(aliasDeleteById).toHaveBeenCalledWith(11, expect.anything());
     expect(handleDeleteById).toHaveBeenCalledWith(12);
     expect(aliasResult).toEqual({
       ok: true,
@@ -120,8 +122,8 @@ describe("Admin delete services", () => {
       item: {
         id: 11,
         address: "sales@example.com",
-        goto: PERMANENT_ALIAS_GOTO,
-        active: 0,
+        goto: "owner@example.com",
+        active: 1,
       },
     });
     expect(handleResult).toEqual({

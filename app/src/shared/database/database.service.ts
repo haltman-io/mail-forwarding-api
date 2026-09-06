@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { createPool, type Pool, type PoolConnection } from "mariadb";
 
 import { AppLogger } from "../logging/app-logger.service.js";
+import { releaseLocalPartRoutingLocks } from "./local-part-routing-lock.js";
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -19,7 +20,7 @@ export class DatabaseService implements OnModuleDestroy {
 
     try {
       connection = await pool.getConnection();
-      return (await connection.query(sql, [...params])) as T;
+      return await connection.query<T>(sql, [...params]);
     } catch (error) {
       this.logger.error("db.query.error", {
         err: error,
@@ -55,6 +56,12 @@ export class DatabaseService implements OnModuleDestroy {
       throw error;
     } finally {
       if (connection) {
+        try {
+          await releaseLocalPartRoutingLocks(connection);
+        } catch {
+          this.logger.warn("db.local_part_locks.release.error");
+        }
+
         await connection.release();
       }
     }

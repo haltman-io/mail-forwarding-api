@@ -5,7 +5,17 @@ import { PublicHttpException } from "../src/shared/errors/public-http.exception.
 import { PERMANENT_ALIAS_GOTO } from "../src/shared/utils/alias-policy.js";
 
 describe("AliasService.deleteAlias", () => {
+  function createTxConnection() {
+    return {
+      tx: true,
+      query: jest.fn((sql: string) =>
+        Promise.resolve(sql.includes("GET_LOCK") ? [{ acquired: 1 }] : [{ released: 1 }]),
+      ),
+    };
+  }
+
   function createService() {
+    const connection = createTxConnection();
     const aliasRepository = {
       getByAddress: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
       deactivateByAddress: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -23,7 +33,7 @@ describe("AliasService.deleteAlias", () => {
     };
     const databaseService = {
       withTransaction: jest.fn(async (work: (connection: object) => Promise<unknown>) =>
-        work({ tx: true }),
+        work(connection),
       ),
     };
     const logger = {} as never;
@@ -37,7 +47,14 @@ describe("AliasService.deleteAlias", () => {
       logger,
     );
 
-    return { service, aliasRepository, banPolicyService, databaseService, domainRepository };
+    return {
+      service,
+      aliasRepository,
+      banPolicyService,
+      databaseService,
+      domainRepository,
+      connection,
+    };
   }
 
   describe("createAlias", () => {
