@@ -16,6 +16,7 @@ describe("AppModule", () => {
     process.env.CHECKDNS_BASE_URL = "https://checkdns.example.com";
     process.env.CHECKDNS_TOKEN = "token";
     process.env.AUTH_CSRF_SECRET = "csrf-secret";
+    process.env.COUNTER_SECRET_KEY = "counter-secret";
     process.env.JWT_ACCESS_PRIVATE_KEY = "private-key";
     process.env.JWT_ACCESS_KID = "kid-1";
     process.env.JWT_ACCESS_VERIFY_KEYS = JSON.stringify({ "kid-1": "public-key" });

@@ -8,6 +8,7 @@ export default tseslint.config(
       "coverage/**",
       "node_modules/**",
       "ecosystem.config.js",
+      "ecosystem.config.cjs",
       "eslint.config.mjs",
       "jest.config.ts"
     ]

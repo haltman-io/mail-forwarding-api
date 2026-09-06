@@ -183,17 +183,22 @@ export class AliasRepository {
     return rows[0] ?? null;
   }
 
-  async existsReservedHandle(handle: string, connection?: PoolConnection): Promise<boolean> {
+  async existsReservedHandle(
+    handle: string,
+    connection?: PoolConnection,
+    options: { forUpdate?: boolean } = {},
+  ): Promise<boolean> {
     const normalized = String(handle || "").trim().toLowerCase();
     if (!normalized) return false;
 
     const executor = connection ?? this.database;
+    const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<ExistsRow[]>(
       executor,
       `SELECT 1 AS ok
        FROM alias_handle
        WHERE handle = ?
-       LIMIT 1`,
+       LIMIT 1${lockClause}`,
       [normalized],
     );
 
@@ -216,6 +221,52 @@ export class AliasRepository {
     );
 
     return rows.length === 1;
+  }
+
+  async findActiveByLocalPart(
+    localPart: string,
+    connection?: PoolConnection,
+    options: { forUpdate?: boolean } = {},
+  ): Promise<AliasRow[]> {
+    const normalized = String(localPart || "").trim().toLowerCase();
+    if (!normalized) return [];
+
+    const executor = connection ?? this.database;
+    const lockClause = options.forUpdate ? " FOR UPDATE" : "";
+    return runQuery<AliasRow[]>(
+      executor,
+      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+       FROM alias a
+       LEFT JOIN domain d
+         ON d.name COLLATE utf8mb4_unicode_ci =
+            SUBSTRING_INDEX(a.address, '@', -1) COLLATE utf8mb4_unicode_ci
+       WHERE SUBSTRING_INDEX(a.address, '@', 1) = ?
+         AND a.active = 1${lockClause}`,
+      [normalized],
+    );
+  }
+
+  async deleteActiveByIdsAndOwner(
+    aliasIds: readonly number[],
+    ownerEmail: string,
+    connection?: PoolConnection,
+  ): Promise<number> {
+    const ids = [...new Set(aliasIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+    const normalizedOwnerEmail = String(ownerEmail || "").trim().toLowerCase();
+    if (ids.length === 0 || !normalizedOwnerEmail) return 0;
+
+    const executor = connection ?? this.database;
+    const placeholders = ids.map(() => "?").join(", ");
+    const result = await runQuery<InsertResult>(
+      executor,
+      `DELETE FROM alias
+       WHERE id IN (${placeholders})
+         AND active = 1
+         AND LOWER(TRIM(goto)) = ?`,
+      [...ids, normalizedOwnerEmail],
+    );
+
+    return Number(result?.affectedRows ?? 0);
   }
 
   async createIfNotExists(payload: {

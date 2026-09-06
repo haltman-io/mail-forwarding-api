@@ -17,7 +17,7 @@ import {
 } from "../../../shared/validation/mailbox.js";
 import { BanPolicyService } from "../../bans/ban-policy.service.js";
 import { DomainRepository } from "../../domains/domain.repository.js";
-import { AliasRepository } from "../../api/repositories/alias.repository.js";
+import { AliasRepository, type AliasRow } from "../../api/repositories/alias.repository.js";
 import { EmailConfirmationsRepository } from "../../forwarding/repositories/email-confirmations.repository.js";
 import { EmailConfirmationService } from "../../forwarding/services/email-confirmation.service.js";
 import { HandleRepository } from "../repositories/handle.repository.js";
@@ -82,9 +82,11 @@ export class HandleService {
       throw new PublicHttpException(409, { ok: false, error: "alias_taken" });
     }
 
-    const existsAlias = await this.aliasRepository.existsByLocalPart(handle);
-    if (existsAlias) {
-      throw new PublicHttpException(409, { ok: false, error: "alias_taken" });
+    const activeAliases = await this.aliasRepository.findActiveByLocalPart(handle);
+    if (activeAliases.length > 0) {
+      if (this.hasAliasOwnerConflict(activeAliases, to.email)) {
+        throw new PublicHttpException(409, { ok: false, error: "alias_taken" });
+      }
     }
 
     const confirmation = await this.emailConfirmationService.sendEmailConfirmation({
@@ -320,14 +322,20 @@ export class HandleService {
         return { status: 400, body: { ok: false, error: "invalid_or_expired" } };
       }
 
-      const existsHandle = await this.handleRepository.existsByHandle(handle, connection);
+      const existsHandle = await this.handleRepository.existsByHandle(handle, connection, {
+        forUpdate: true,
+      });
       if (existsHandle) {
         return { status: 409, body: { ok: false, error: "alias_taken" } };
       }
 
-      const existsAlias = await this.aliasRepository.existsByLocalPart(handle, connection);
-      if (existsAlias) {
-        return { status: 409, body: { ok: false, error: "alias_taken" } };
+      const activeAliases = await this.aliasRepository.findActiveByLocalPart(handle, connection, {
+        forUpdate: true,
+      });
+      if (activeAliases.length > 0) {
+        if (this.hasAliasOwnerConflict(activeAliases, toEmail)) {
+          return { status: 409, body: { ok: false, error: "alias_taken" } };
+        }
       }
 
       const banName = await this.banPolicyService.findActiveNameBan(handle);
@@ -352,11 +360,35 @@ export class HandleService {
         throw error;
       }
 
-      await this.emailConfirmationsRepository.markConfirmedById(lockedPending.id, connection);
+      let convertedAliases: string[] = [];
+      if (activeAliases.length > 0) {
+        const activeAliasIds = activeAliases.map((row) => row.id);
+        const deleted = await this.aliasRepository.deleteActiveByIdsAndOwner(
+          activeAliasIds,
+          toEmail,
+          connection,
+        );
+        this.assertConvertedAliasCount(deleted, activeAliasIds.length);
+        convertedAliases = activeAliases.map((row) => row.address);
+      }
+
+      const confirmed = await this.emailConfirmationsRepository.markConfirmedById(
+        lockedPending.id,
+        connection,
+      );
+      if (!confirmed) {
+        throw new Error("handle_confirm_commit_failed");
+      }
 
       return {
         status: 200,
-        body: { ok: true, created: true, handle, goto: toEmail },
+        body: {
+          ok: true,
+          created: true,
+          handle,
+          goto: toEmail,
+          ...(convertedAliases.length > 0 ? { converted_aliases: convertedAliases } : {}),
+        },
       };
     });
   }
@@ -471,6 +503,19 @@ export class HandleService {
     const banEmail = await this.banPolicyService.findActiveEmailOrDomainBan(destinationEmail);
     if (banEmail) {
       throw new PublicHttpException(403, { error: "banned", ban: banEmail });
+    }
+  }
+
+  private hasAliasOwnerConflict(rows: readonly AliasRow[], ownerEmail: string): boolean {
+    return rows.some((row) => String(row.goto || "").trim().toLowerCase() !== ownerEmail);
+  }
+
+  private assertConvertedAliasCount(deleted: number, expected: number): void {
+    if (deleted !== expected) {
+      throw new PublicHttpException(409, {
+        ok: false,
+        error: "alias_conversion_state_changed",
+      });
     }
   }
 }

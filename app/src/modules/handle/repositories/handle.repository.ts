@@ -79,14 +79,16 @@ export class HandleRepository {
   async existsByHandle(
     handle: string,
     connection?: PoolConnection,
+    options: { forUpdate?: boolean } = {},
   ): Promise<boolean> {
     const executor = connection ?? this.database;
+    const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<ExistsRow[]>(
       executor,
       `SELECT 1 AS ok
        FROM alias_handle
        WHERE handle = ?
-       LIMIT 1`,
+       LIMIT 1${lockClause}`,
       [handle],
     );
 

@@ -514,7 +514,11 @@ export class ForwardingService {
         };
       }
 
-      const reservedHandle = await this.aliasRepository.existsReservedHandle(aliasName, connection);
+      const reservedHandle = await this.aliasRepository.existsReservedHandle(
+        aliasName,
+        connection,
+        { forUpdate: true },
+      );
       if (reservedHandle) {
         return { status: 409, body: { ok: false, error: "alias_taken", address } };
       }

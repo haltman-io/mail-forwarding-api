@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
 import { DatabaseService } from "../../../shared/database/database.service.js";
+import { isDuplicateEntry } from "../../../shared/database/database.utils.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { AppLogger } from "../../../shared/logging/app-logger.service.js";
 import {
@@ -95,6 +96,12 @@ export class AliasService {
       throw new PublicHttpException(400, { error: "invalid_params", field: "alias_domain" });
     }
 
+    const owner = parseMailbox(params.ownerEmail);
+    if (!owner) {
+      throw new PublicHttpException(401, { error: "invalid_api_key_owner" });
+    }
+    const ownerEmail = owner.email;
+
     const banName = await this.banPolicyService.findActiveNameBan(aliasHandle);
     if (banName) {
       throw new PublicHttpException(403, { error: "banned", ban: banName });
@@ -105,7 +112,7 @@ export class AliasService {
       throw new PublicHttpException(403, { error: "banned", ban: banAliasDomain });
     }
 
-    const banOwner = await this.banPolicyService.findActiveEmailOrDomainBan(params.ownerEmail);
+    const banOwner = await this.banPolicyService.findActiveEmailOrDomainBan(ownerEmail);
     if (banOwner) {
       throw new PublicHttpException(403, { error: "banned", ban: banOwner });
     }
@@ -117,23 +124,39 @@ export class AliasService {
 
     const address = `${aliasHandle}@${aliasDomain}`;
 
-    const reservedHandle = await this.aliasRepository.existsReservedHandle(aliasHandle);
-    if (reservedHandle) {
-      throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+    try {
+      await this.databaseService.withTransaction(async (connection) => {
+        const reservedHandle = await this.aliasRepository.existsReservedHandle(
+          aliasHandle,
+          connection,
+          { forUpdate: true },
+        );
+        if (reservedHandle) {
+          throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+        }
+
+        const created = await this.aliasRepository.createIfNotExists(
+          {
+            address,
+            goto: ownerEmail,
+            domainId: domainRow.id,
+            active: 1,
+          },
+          connection,
+        );
+
+        if (created.alreadyExists) {
+          throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+        }
+      });
+    } catch (error) {
+      if (isDuplicateEntry(error)) {
+        throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
+      }
+      throw error;
     }
 
-    const created = await this.aliasRepository.createIfNotExists({
-      address,
-      goto: params.ownerEmail,
-      domainId: domainRow.id,
-      active: 1,
-    });
-
-    if (created.alreadyExists) {
-      throw new PublicHttpException(409, { ok: false, error: "alias_taken", address });
-    }
-
-    return { ok: true, created: true, address, goto: params.ownerEmail };
+    return { ok: true, created: true, address, goto: ownerEmail };
   }
 
   async deleteAlias(params: {
@@ -144,6 +167,12 @@ export class AliasService {
     if (!parsed) {
       throw new PublicHttpException(400, { error: "invalid_params", field: "alias" });
     }
+
+    const owner = parseMailbox(params.ownerEmail);
+    if (!owner) {
+      throw new PublicHttpException(401, { error: "invalid_api_key_owner" });
+    }
+    const ownerEmail = owner.email;
 
     const result = await this.databaseService.withTransaction(async (connection) => {
       const row = await this.aliasRepository.getByAddress(parsed.email, connection, { forUpdate: true });
@@ -156,7 +185,7 @@ export class AliasService {
       }
 
       const goto = String(row.goto || "").trim().toLowerCase();
-      if (goto !== params.ownerEmail) {
+      if (goto !== ownerEmail) {
         throw new PublicHttpException(403, { error: "forbidden" });
       }
 
