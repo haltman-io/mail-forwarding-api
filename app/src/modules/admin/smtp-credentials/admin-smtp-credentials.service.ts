@@ -19,6 +19,7 @@ import type { ResolvedAuthContext } from "../../auth/services/auth-session-conte
 import { PasswordService } from "../../auth/services/password.service.js";
 import { AdminAliasesRepository } from "../aliases/admin-aliases.repository.js";
 import { AdminDomainsRepository } from "../domains/admin-domains.repository.js";
+import { AdminHandlesRepository } from "../handles/admin-handles.repository.js";
 import type {
   AdminCreateSmtpCredentialDto,
   AdminCreateSmtpInviteDto,
@@ -64,7 +65,6 @@ export interface SmtpConnectionParams {
 
 const DEFAULT_INVITE_TTL_HOURS = 72;
 const MAX_ALLOWED_SENDERS = 100;
-const RE_SMTP_USERNAME = /^[a-z0-9][a-z0-9._@+-]{1,318}[a-z0-9]$/;
 
 @Injectable()
 export class AdminSmtpCredentialsService {
@@ -75,6 +75,7 @@ export class AdminSmtpCredentialsService {
     private readonly passwordService: PasswordService,
     private readonly adminAliasesRepository: AdminAliasesRepository,
     private readonly adminDomainsRepository: AdminDomainsRepository,
+    private readonly adminHandlesRepository: AdminHandlesRepository,
   ) {}
 
   async listCredentials(query: AdminSmtpCredentialsListQueryDto): Promise<{
@@ -112,7 +113,8 @@ export class AdminSmtpCredentialsService {
     password?: string;
     item: PublicSmtpCredential;
   }> {
-    const username = this.normalizeUsername(dto.username);
+    const login = this.normalizeLogin(dto.username);
+    const username = login.email;
     const allowedSenders = this.normalizeSenderList(dto.allowed_senders, {
       allowEmpty: false,
     });
@@ -131,7 +133,8 @@ export class AdminSmtpCredentialsService {
           throw new PublicHttpException(409, { error: "smtp_username_taken", username });
         }
 
-        await this.assertActiveHostedSenders(allowedSenders, connection);
+        await this.assertResolvableHostedLogin(login, connection);
+        await this.assertSupportedSenders(allowedSenders, connection);
         await this.smtpCredentialsRepository.createUser(
           { username, passwordHash, active },
           connection,
@@ -164,7 +167,7 @@ export class AdminSmtpCredentialsService {
     rawUsername: string,
     dto: AdminUpdateSmtpCredentialDto,
   ): Promise<{ ok: true; updated: true; item: PublicSmtpCredential }> {
-    const username = this.normalizeUsername(rawUsername);
+    const username = this.normalizeLogin(rawUsername).email;
     const hasPassword = dto.password !== undefined;
     const hasAllowedSenders = dto.allowed_senders !== undefined;
     const hasActive = dto.active !== undefined;
@@ -190,7 +193,7 @@ export class AdminSmtpCredentialsService {
       }
 
       if (allowedSenders !== undefined) {
-        await this.assertActiveHostedSenders(allowedSenders, connection);
+        await this.assertSupportedSenders(allowedSenders, connection);
       }
 
       await this.smtpCredentialsRepository.updateUser(
@@ -216,7 +219,7 @@ export class AdminSmtpCredentialsService {
   async deleteCredential(
     rawUsername: string,
   ): Promise<{ ok: true; deleted: true; item: PublicSmtpCredential }> {
-    const username = this.normalizeUsername(rawUsername);
+    const username = this.normalizeLogin(rawUsername).email;
 
     const item = await withTxRetry(this.database, async (connection) => {
       const existing = await this.smtpCredentialsRepository.getUserByUsername(
@@ -251,7 +254,7 @@ export class AdminSmtpCredentialsService {
       ? this.normalizeSender(dto.allowed_sender_constraint, "allowed_sender_constraint")
       : null;
     if (allowedSenderConstraint) {
-      await this.assertActiveHostedSender(
+      await this.assertSupportedSender(
         allowedSenderConstraint,
         undefined,
         "allowed_sender_constraint",
@@ -297,8 +300,9 @@ export class AdminSmtpCredentialsService {
     dto: SmtpSetupClaimDto,
   ): Promise<{ ok: true; claimed: true; smtp: SmtpConnectionParams }> {
     const tokenHash = this.normalizeTokenHash(token);
-    const alias = this.normalizeSender(dto.alias, "alias");
-    const username = this.normalizeUsername(dto.username);
+    const sender = this.normalizeSender(dto.sender ?? dto.alias, "sender");
+    const login = this.normalizeLogin(dto.username);
+    const username = login.email;
     const password = this.normalizePlainPassword(dto.password);
     const passwordHash = await this.hashSmtpPassword(password);
 
@@ -315,7 +319,7 @@ export class AdminSmtpCredentialsService {
 
         if (
           invite.allowed_sender_constraint &&
-          invite.allowed_sender_constraint !== alias.email
+          invite.allowed_sender_constraint !== sender.email
         ) {
           throw new PublicHttpException(403, {
             error: "sender_not_allowed",
@@ -323,7 +327,8 @@ export class AdminSmtpCredentialsService {
           });
         }
 
-        await this.assertActiveHostedSender(alias, connection, "alias");
+        await this.assertResolvableHostedLogin(login, connection);
+        await this.assertSupportedSender(sender, connection, "sender");
         const existing = await this.smtpCredentialsRepository.getUserByUsername(
           username,
           connection,
@@ -339,7 +344,7 @@ export class AdminSmtpCredentialsService {
         );
         await this.smtpCredentialsRepository.replaceAllowedSenders(
           username,
-          [alias.email],
+          [sender.email],
           connection,
         );
 
@@ -366,7 +371,7 @@ export class AdminSmtpCredentialsService {
         ...this.getSubmissionEndpoint(),
         username,
         password,
-        sender: alias.email,
+        sender: sender.email,
       },
     };
   }
@@ -399,43 +404,70 @@ export class AdminSmtpCredentialsService {
     return row;
   }
 
-  private async assertActiveHostedSenders(
+  private async assertResolvableHostedLogin(
+    login: ParsedMailbox,
+    connection?: PoolConnection,
+  ): Promise<void> {
+    await this.assertSupportedDomain(login.domain, connection, "username", login.email);
+
+    const alias = await this.adminAliasesRepository.getByAddress(
+      login.email,
+      connection,
+      { forUpdate: Boolean(connection) },
+    );
+    if (alias && Number(alias.active || 0) === 1 && alias.domain_id) {
+      return;
+    }
+
+    const handle = await this.adminHandlesRepository.getByHandle(
+      login.local,
+      connection,
+      { forUpdate: Boolean(connection) },
+    );
+    if (handle && Number(handle.active || 0) === 1 && String(handle.address || "").trim()) {
+      return;
+    }
+
+    throw new PublicHttpException(404, {
+      error: "smtp_username_not_resolvable",
+      username: login.email,
+    });
+  }
+
+  private async assertSupportedSenders(
     senders: ParsedMailbox[],
     connection?: PoolConnection,
   ): Promise<void> {
     for (const sender of senders) {
-      await this.assertActiveHostedSender(sender, connection, "allowed_senders");
+      await this.assertSupportedSender(sender, connection, "allowed_senders");
     }
   }
 
-  private async assertActiveHostedSender(
+  private async assertSupportedSender(
     sender: ParsedMailbox,
     connection?: PoolConnection,
     field = "allowed_senders",
   ): Promise<void> {
+    await this.assertSupportedDomain(sender.domain, connection, field, sender.email);
+  }
+
+  private async assertSupportedDomain(
+    domainName: string,
+    connection: PoolConnection | undefined,
+    field: string,
+    email: string,
+  ): Promise<void> {
     const domain = connection
-      ? await this.adminDomainsRepository.getByName(sender.domain, connection, {
+      ? await this.adminDomainsRepository.getByName(domainName, connection, {
           forUpdate: true,
         })
-      : await this.adminDomainsRepository.getEmailValidByName(sender.domain);
+      : await this.adminDomainsRepository.getEmailValidByName(domainName);
 
     if (!domain || Number(domain.active || 0) !== 1 || Number(domain.active_mx || 0) !== 1) {
       throw new PublicHttpException(400, {
-        error: "invalid_sender_domain",
+        error: field === "username" ? "invalid_username_domain" : "invalid_sender_domain",
         field,
-        sender: sender.email,
-      });
-    }
-
-    const alias = await this.adminAliasesRepository.getByAddress(
-      sender.email,
-      connection,
-      { forUpdate: Boolean(connection) },
-    );
-    if (!alias || Number(alias.active || 0) !== 1 || !alias.domain_id) {
-      throw new PublicHttpException(404, {
-        error: "sender_alias_not_found",
-        sender: sender.email,
+        email,
       });
     }
   }
@@ -474,18 +506,12 @@ export class AdminSmtpCredentialsService {
     return sender;
   }
 
-  private normalizeUsername(raw: unknown): string {
-    if (typeof raw !== "string") {
+  private normalizeLogin(raw: unknown): ParsedMailbox {
+    const login = parseMailbox(raw);
+    if (!login) {
       throw new PublicHttpException(400, { error: "invalid_params", field: "username" });
     }
-    const username = raw.trim().toLowerCase();
-    if (!username || username.length < 3 || username.length > 320) {
-      throw new PublicHttpException(400, { error: "invalid_params", field: "username" });
-    }
-    if (!RE_SMTP_USERNAME.test(username)) {
-      throw new PublicHttpException(400, { error: "invalid_params", field: "username" });
-    }
-    return username;
+    return login;
   }
 
   private normalizeActive(raw: unknown): boolean {

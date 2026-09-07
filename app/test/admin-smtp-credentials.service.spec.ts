@@ -44,6 +44,12 @@ type TestDomainRow = {
   active_ui: number;
   visible: number;
 };
+type TestHandleRow = {
+  id: number;
+  handle: string;
+  address: string;
+  active: number;
+};
 
 describe("AdminSmtpCredentialsService", () => {
   const connection = {};
@@ -61,7 +67,7 @@ describe("AdminSmtpCredentialsService", () => {
     access_expires_at: null,
   };
 
-  function smtpUserRow(username = "my-service"): AdminSmtpUserRow {
+  function smtpUserRow(username = "andre@example.com"): AdminSmtpUserRow {
     return {
       id: 5,
       username,
@@ -158,36 +164,40 @@ describe("AdminSmtpCredentialsService", () => {
     };
     const adminAliasesRepository = {
       getByAddress: jest.fn((): Promise<TestAliasRow | null> =>
-        Promise.resolve({
-          id: 10,
-          address: "contact@example.com",
-          goto: "owner@example.net",
-          active: 1,
-          domain_id: 2,
-          created: null,
-          modified: null,
-        }),
+        Promise.resolve(null),
       ),
     };
     const adminDomainsRepository = {
-      getByName: jest.fn((): Promise<TestDomainRow | null> =>
-        Promise.resolve({
+      getByName: jest.fn((domainName: string): Promise<TestDomainRow | null> => {
+        void domainName;
+        return Promise.resolve({
           id: 2,
           name: "example.com",
           active: 1,
           active_mx: 1,
           active_ui: 1,
           visible: 1,
-        }),
-      ),
-      getEmailValidByName: jest.fn((): Promise<TestDomainRow | null> =>
-        Promise.resolve({
+        });
+      }),
+      getEmailValidByName: jest.fn((domainName: string): Promise<TestDomainRow | null> => {
+        void domainName;
+        return Promise.resolve({
           id: 2,
           name: "example.com",
           active: 1,
           active_mx: 1,
           active_ui: 1,
           visible: 1,
+        });
+      }),
+    };
+    const adminHandlesRepository = {
+      getByHandle: jest.fn((): Promise<TestHandleRow | null> =>
+        Promise.resolve({
+          id: 11,
+          handle: "andre",
+          address: "andre@gmail.com",
+          active: 1,
         }),
       ),
     };
@@ -199,6 +209,7 @@ describe("AdminSmtpCredentialsService", () => {
       passwordService as never,
       adminAliasesRepository as never,
       adminDomainsRepository as never,
+      adminHandlesRepository as never,
     );
 
     return {
@@ -209,26 +220,28 @@ describe("AdminSmtpCredentialsService", () => {
       passwordService,
       adminAliasesRepository,
       adminDomainsRepository,
+      adminHandlesRepository,
     };
   }
 
-  it("creates a credential with Dovecot Argon2id hash and deduped sender ACLs", async () => {
+  it("creates a credential for a handle-backed email with Dovecot Argon2id hash and deduped sender ACLs", async () => {
     const {
       service,
       smtpCredentialsRepository,
       passwordService,
       adminAliasesRepository,
+      adminHandlesRepository,
     } = createService();
 
     smtpCredentialsRepository.getUserByUsername
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(smtpUserRow());
     smtpCredentialsRepository.listActiveSendersForLogins.mockResolvedValue(
-      new Map([["my-service", ["alerts@example.com", "contact@example.com"]]]),
+      new Map([["andre@example.com", ["alerts@example.com", "contact@example.com"]]]),
     );
 
     const result = await service.createCredential({
-      username: " My-Service ",
+      username: " Andre@Example.com ",
       allowed_senders: [
         "Contact@Example.com",
         "contact@example.com",
@@ -240,39 +253,92 @@ describe("AdminSmtpCredentialsService", () => {
     expect(passwordService.hashPassword).toHaveBeenCalledWith(result.password);
     expect(smtpCredentialsRepository.createUser).toHaveBeenCalledWith(
       {
-        username: "my-service",
+        username: "andre@example.com",
         passwordHash: "{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=1$c2FsdA$ZGlnZXN0",
         active: true,
       },
       connection,
     );
     expect(smtpCredentialsRepository.replaceAllowedSenders).toHaveBeenCalledWith(
-      "my-service",
+      "andre@example.com",
       ["contact@example.com", "alerts@example.com"],
       connection,
     );
-    expect(adminAliasesRepository.getByAddress).toHaveBeenCalledTimes(2);
+    expect(adminAliasesRepository.getByAddress).toHaveBeenCalledWith(
+      "andre@example.com",
+      connection,
+      { forUpdate: true },
+    );
+    expect(adminHandlesRepository.getByHandle).toHaveBeenCalledWith(
+      "andre",
+      connection,
+      { forUpdate: true },
+    );
     expect(result).toMatchObject({
       ok: true,
       created: true,
       generated_password: true,
       item: {
         id: 5,
-        username: "my-service",
+        username: "andre@example.com",
         active: 1,
         allowed_senders: ["alerts@example.com", "contact@example.com"],
       },
     });
   });
 
-  it("rejects direct SMTP ACL creation for a sender without an active hosted alias", async () => {
-    const { service, smtpCredentialsRepository, adminAliasesRepository } = createService();
+  it("rejects sender ACL creation only when the sender domain is unsupported", async () => {
+    const { service, smtpCredentialsRepository, adminDomainsRepository } = createService();
     smtpCredentialsRepository.getUserByUsername.mockResolvedValueOnce(null);
-    adminAliasesRepository.getByAddress.mockResolvedValueOnce(null);
+    adminDomainsRepository.getByName.mockImplementation((domainName: string) =>
+      Promise.resolve(
+        domainName === "example.com"
+          ? {
+              id: 2,
+              name: "example.com",
+              active: 1,
+              active_mx: 1,
+              active_ui: 1,
+              visible: 1,
+            }
+          : null,
+      ),
+    );
 
     try {
       await service.createCredential({
-        username: "my-service",
+        username: "andre@example.com",
+        password: "CorrectHorse1",
+        allowed_senders: ["contact@external.net"],
+      });
+      fail("expected createCredential to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PublicHttpException);
+      expect((error as PublicHttpException).getStatus()).toBe(400);
+      expect((error as PublicHttpException).getResponse()).toEqual({
+        error: "invalid_sender_domain",
+        field: "allowed_senders",
+        email: "contact@external.net",
+      });
+    }
+
+    expect(smtpCredentialsRepository.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects SMTP usernames that are not backed by an active alias or handle", async () => {
+    const {
+      service,
+      smtpCredentialsRepository,
+      adminAliasesRepository,
+      adminHandlesRepository,
+    } = createService();
+    smtpCredentialsRepository.getUserByUsername.mockResolvedValueOnce(null);
+    adminAliasesRepository.getByAddress.mockResolvedValueOnce(null);
+    adminHandlesRepository.getByHandle.mockResolvedValueOnce(null);
+
+    try {
+      await service.createCredential({
+        username: "nobody@example.com",
         password: "CorrectHorse1",
         allowed_senders: ["contact@example.com"],
       });
@@ -281,8 +347,8 @@ describe("AdminSmtpCredentialsService", () => {
       expect(error).toBeInstanceOf(PublicHttpException);
       expect((error as PublicHttpException).getStatus()).toBe(404);
       expect((error as PublicHttpException).getResponse()).toEqual({
-        error: "sender_alias_not_found",
-        sender: "contact@example.com",
+        error: "smtp_username_not_resolvable",
+        username: "nobody@example.com",
       });
     }
 
@@ -292,7 +358,7 @@ describe("AdminSmtpCredentialsService", () => {
   it("rejects an empty credential patch", async () => {
     const { service } = createService();
 
-    await expect(service.updateCredential("my-service", {})).rejects.toMatchObject({
+    await expect(service.updateCredential("andre@example.com", {})).rejects.toMatchObject({
       response: { error: "empty_patch" },
       status: 400,
     });
@@ -305,12 +371,12 @@ describe("AdminSmtpCredentialsService", () => {
       .mockResolvedValueOnce(smtpUserRow());
     smtpCredentialsRepository.listActiveSendersForLogins.mockResolvedValue(new Map());
 
-    const result = await service.updateCredential("my-service", {
+    const result = await service.updateCredential("andre@example.com", {
       allowed_senders: [],
     });
 
     expect(smtpCredentialsRepository.replaceAllowedSenders).toHaveBeenCalledWith(
-      "my-service",
+      "andre@example.com",
       [],
       connection,
     );
@@ -341,8 +407,8 @@ describe("AdminSmtpCredentialsService", () => {
 
     try {
       await service.claimSetup("a".repeat(32), {
-        alias: "alerts@example.com",
-        username: "my-service",
+        sender: "alerts@example.com",
+        username: "andre@example.com",
         password: "CorrectHorse1",
       });
       fail("expected claimSetup to throw");
@@ -366,27 +432,27 @@ describe("AdminSmtpCredentialsService", () => {
     smtpCredentialsRepository.markInviteUsed.mockResolvedValue(true);
 
     const result = await service.claimSetup("a".repeat(32), {
-      alias: "Contact@Example.com",
-      username: " My-Service ",
+      sender: "Integration@Example.com",
+      username: " Andre@Example.com ",
       password: "CorrectHorse1",
     });
 
     expect(smtpCredentialsRepository.createUser).toHaveBeenCalledWith(
       {
-        username: "my-service",
+        username: "andre@example.com",
         passwordHash: "{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=1$c2FsdA$ZGlnZXN0",
         active: true,
       },
       connection,
     );
     expect(smtpCredentialsRepository.replaceAllowedSenders).toHaveBeenCalledWith(
-      "my-service",
-      ["contact@example.com"],
+      "andre@example.com",
+      ["integration@example.com"],
       connection,
     );
     expect(smtpCredentialsRepository.markInviteUsed).toHaveBeenCalledWith(
       9,
-      "my-service",
+      "andre@example.com",
       connection,
     );
     expect(result).toEqual({
@@ -396,9 +462,9 @@ describe("AdminSmtpCredentialsService", () => {
         host: "smtp.example.com",
         port: 587,
         secure: false,
-        username: "my-service",
+        username: "andre@example.com",
         password: "CorrectHorse1",
-        sender: "contact@example.com",
+        sender: "integration@example.com",
       },
     });
   });

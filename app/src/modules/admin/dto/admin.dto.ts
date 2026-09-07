@@ -597,7 +597,7 @@ export class AdminSmtpCredentialsListQueryDto extends AdminPaginationQueryDto {
   @Transform(({ value }) => normalizeOptionalSearch(value))
   @IsString()
   @MinLength(1)
-  @MaxLength(320)
+  @MaxLength(254)
   username?: string;
 
   @IsOptional()
@@ -612,7 +612,7 @@ export class AdminCreateSmtpCredentialDto {
   @Transform(({ value }) => normalizeLowerTrim(value))
   @IsString()
   @MinLength(3)
-  @MaxLength(320)
+  @MaxLength(254)
   username!: string;
 
   @IsOptional()
@@ -675,16 +675,24 @@ export class AdminCreateSmtpInviteDto {
 }
 
 export class SmtpSetupClaimDto {
+  @IsOptional()
   @Transform(({ value }) => normalizeLowerTrim(value))
   @IsString()
   @MinLength(1)
   @MaxLength(254)
-  alias!: string;
+  alias?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(254)
+  sender?: string;
 
   @Transform(({ value }) => normalizeLowerTrim(value))
   @IsString()
   @MinLength(3)
-  @MaxLength(320)
+  @MaxLength(254)
   username!: string;
 
   @IsString()
