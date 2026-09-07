@@ -488,6 +488,13 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       return this.credentialsConfirmRules(method === "GET" ? normalizeGetToken : normalizeBodyToken);
     }
 
+    if (
+      (method === "GET" && /^\/api\/smtp-setup\/[^/]+$/.test(path)) ||
+      (method === "POST" && /^\/api\/smtp-setup\/[^/]+\/claim$/.test(path))
+    ) {
+      return this.smtpSetupRules();
+    }
+
     if (method === "POST" && path === "/api/auth/sign-in") {
       return [
         this.globalLimitRule(),
@@ -902,6 +909,43 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       path === "/api/handle/domain/disable/confirm" ||
       path === "/api/handle/domain/enable/confirm"
     );
+  }
+
+  private smtpSetupRules(): Rule[] {
+    return [
+      this.globalLimitRule(),
+      {
+        kind: "limit",
+        name: "smtp_setup_ip",
+        windowMs: 10 * 60_000,
+        limit: this.settings.credentialsConfirmPer10MinPerIp,
+        message: {
+          error: "rate_limited",
+          where: "smtp_setup",
+          reason: "too_many_requests_ip",
+        },
+        key: this.keyByOrigin,
+      },
+      {
+        kind: "limit",
+        name: "smtp_setup_token",
+        windowMs: 10 * 60_000,
+        limit: this.settings.credentialsConfirmPer10MinPerToken,
+        message: {
+          error: "rate_limited",
+          where: "smtp_setup",
+          reason: "too_many_requests_token",
+        },
+        key: (request) => `smtp_setup:${this.resolveSmtpSetupToken(request) || "missing"}`,
+      },
+    ];
+  }
+
+  private resolveSmtpSetupToken(request: Request): string {
+    const segments = String(request.path || "")
+      .split("/")
+      .filter(Boolean);
+    return String(segments[2] || "").trim().toLowerCase();
   }
 
   private handleConfirmRules(tokenResolver: (request: Request) => string): Rule[] {

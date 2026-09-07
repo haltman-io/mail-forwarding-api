@@ -24,7 +24,13 @@ import { AdminHandlesRepository } from "./handles/admin-handles.repository.js";
 import { AdminCreationNotificationService } from "./utils/admin-creation-notification.service.js";
 import { AdminNotificationService } from "./users/admin-notification.service.js";
 import { AdminDomainsService } from "./domains/admin-domains.service.js";
+import { AdminRateLimitController } from "./rate-limit/admin-rate-limit.controller.js";
+import { AdminRateLimitService } from "./rate-limit/admin-rate-limit.service.js";
 import { AdminSessionService } from "./session/admin-session.service.js";
+import { AdminSmtpCredentialsController } from "./smtp-credentials/admin-smtp-credentials.controller.js";
+import { AdminSmtpCredentialsRepository } from "./smtp-credentials/admin-smtp-credentials.repository.js";
+import { AdminSmtpCredentialsService } from "./smtp-credentials/admin-smtp-credentials.service.js";
+import { SmtpSetupController } from "./smtp-credentials/smtp-setup.controller.js";
 import { AdminUsersController } from "./users/admin-users.controller.js";
 import { AdminUsersRepository } from "./users/admin-users.repository.js";
 import { AdminUsersService } from "./users/admin-users.service.js";
@@ -39,6 +45,9 @@ import { AdminUsersService } from "./users/admin-users.service.js";
     AdminHandlesController,
     AdminBansController,
     AdminApiTokensController,
+    AdminRateLimitController,
+    AdminSmtpCredentialsController,
+    SmtpSetupController,
     AdminUsersController,
   ],
   providers: [
@@ -48,6 +57,7 @@ import { AdminUsersService } from "./users/admin-users.service.js";
     AdminHandlesRepository,
     AdminBansRepository,
     AdminApiTokensRepository,
+    AdminSmtpCredentialsRepository,
     AdminUsersRepository,
     AdminCreationNotificationService,
     AdminNotificationService,
@@ -58,6 +68,8 @@ import { AdminUsersService } from "./users/admin-users.service.js";
     AdminHandlesService,
     AdminBansService,
     AdminApiTokensService,
+    AdminRateLimitService,
+    AdminSmtpCredentialsService,
     AdminUsersService,
   ],
 })

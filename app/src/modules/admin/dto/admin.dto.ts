@@ -1,6 +1,9 @@
 import { Transform, Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsBoolean,
+  IsArray,
   IsDate,
   IsInt,
   IsOptional,
@@ -54,6 +57,11 @@ function transformOptionalDate(value: unknown): Date | null | undefined | string
 function normalizeOptionalSearch(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   return normalizeLowerTrim(value);
+}
+
+function normalizeOptionalStringArray(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((item: unknown) => normalizeLowerTrim(item));
 }
 
 function transformOptionalBoolean(value: unknown): boolean | undefined | string {
@@ -561,6 +569,128 @@ export class AdminUpdateUserDto {
   @Min(0)
   @Max(1)
   is_admin?: number;
+}
+
+export class AdminRateLimitTargetDto {
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(320)
+  target!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @Matches(/^(auto|ip|email|handle|domain)$/)
+  type?: string;
+}
+
+export class AdminSmtpCredentialsListQueryDto extends AdminPaginationQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBooleanInt(value))
+  @IsInt()
+  @Min(0)
+  @Max(1)
+  active?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeOptionalSearch(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(320)
+  username?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeOptionalSearch(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(254)
+  sender?: string;
+}
+
+export class AdminCreateSmtpCredentialDto {
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(3)
+  @MaxLength(320)
+  username!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(MIN_PASSWORD_LEN)
+  @MaxLength(MAX_PASSWORD_LEN)
+  password?: string;
+
+  @Transform(({ value }) => normalizeOptionalStringArray(value))
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(254, { each: true })
+  allowed_senders!: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBoolean(value))
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class AdminUpdateSmtpCredentialDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(MIN_PASSWORD_LEN)
+  @MaxLength(MAX_PASSWORD_LEN)
+  password?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeOptionalStringArray(value))
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(254, { each: true })
+  allowed_senders?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => transformOptionalBoolean(value))
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class AdminCreateSmtpInviteDto {
+  @IsOptional()
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(254)
+  allowed_sender_constraint?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  expires_in_hours?: number;
+}
+
+export class SmtpSetupClaimDto {
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(254)
+  alias!: string;
+
+  @Transform(({ value }) => normalizeLowerTrim(value))
+  @IsString()
+  @MinLength(3)
+  @MaxLength(320)
+  username!: string;
+
+  @IsString()
+  @MinLength(MIN_PASSWORD_LEN)
+  @MaxLength(MAX_PASSWORD_LEN)
+  password!: string;
 }
 
 export class AdminUpdateOwnPasswordDto {

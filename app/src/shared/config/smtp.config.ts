@@ -12,4 +12,7 @@ export const smtpConfig = registerAs("smtp", () => ({
   from: getString("SMTP_FROM", ""),
   heloName: getString("SMTP_HELO_NAME", ""),
   tlsRejectUnauthorized: getBool("SMTP_TLS_REJECT_UNAUTHORIZED", true),
+  submissionHost: getString("SMTP_SUBMISSION_HOST", ""),
+  submissionPort: getInt("SMTP_SUBMISSION_PORT", 587),
+  submissionSecure: getBool("SMTP_SUBMISSION_SECURE", false),
 }));

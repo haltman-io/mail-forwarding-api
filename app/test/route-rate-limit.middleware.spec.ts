@@ -102,6 +102,42 @@ describe("RouteRateLimitMiddleware", () => {
     });
   });
 
+  it("limits public SMTP setup attempts by token across preview and claim", async () => {
+    const middleware = createMiddleware();
+    const next = jest.fn();
+
+    const firstReq = createMockRequest({
+      method: "GET",
+      path: `/api/smtp-setup/${token}`,
+    });
+    const firstRes = createMockResponse();
+
+    await middleware.use(firstReq, firstRes, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+
+    const secondReq = createMockRequest({
+      method: "POST",
+      path: `/api/smtp-setup/${token}/claim`,
+      body: {
+        alias: "contact@example.com",
+        username: "my-service",
+      },
+    });
+    const secondRes = createMockResponse();
+    const secondNext = jest.fn();
+
+    await middleware.use(secondReq, secondRes, secondNext);
+
+    expect(secondNext).not.toHaveBeenCalled();
+    expect(secondRes.statusCode).toBe(429);
+    expect(secondRes.body).toEqual({
+      error: "rate_limited",
+      where: "smtp_setup",
+      reason: "too_many_requests_token",
+    });
+  });
+
   it("limits forwarding confirm previews by token as well", async () => {
     const middleware = createMiddleware();
     const next = jest.fn();
