@@ -643,6 +643,19 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       return [this.globalLimitRule(), this.aliasLimitRule("alias_delete_key", this.settings.aliasDeletePerMinPerKey, "alias_delete")];
     }
 
+    if (
+      /^\/api\/alias\/[^/]+\/pgp$/.test(path) &&
+      ["GET", "POST", "PATCH", "DELETE"].includes(method)
+    ) {
+      const limit = method === "GET"
+        ? this.settings.aliasListPerMinPerKey
+        : method === "DELETE"
+          ? this.settings.aliasDeletePerMinPerKey
+          : this.settings.aliasCreatePerMinPerKey;
+
+      return [this.globalLimitRule(), this.aliasLimitRule("alias_pgp_key", limit, "alias_pgp")];
+    }
+
     if (method === "GET" && path === "/api/handle/subscribe") {
       return [
         this.globalLimitRule(),
@@ -807,6 +820,19 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
       return [this.globalLimitRule(), this.handleApiLimitRule("handle_domain_key", this.settings.handleApiDomainPerMinPerKey, "handle_domain")];
     }
 
+    if (
+      /^\/api\/handle\/[^/]+\/pgp$/.test(path) &&
+      ["GET", "POST", "PATCH", "DELETE"].includes(method)
+    ) {
+      const limit = method === "DELETE"
+        ? this.settings.handleApiDeletePerMinPerKey
+        : method === "GET"
+          ? this.settings.handleApiDomainPerMinPerKey
+          : this.settings.handleApiCreatePerMinPerKey;
+
+      return [this.globalLimitRule(), this.handleApiLimitRule("handle_pgp_key", limit, "handle_pgp")];
+    }
+
     return [];
   }
 
@@ -824,7 +850,7 @@ export class RouteRateLimitMiddleware implements NestMiddleware {
   private aliasLimitRule(
     name: string,
     limit: number,
-    where: "alias_list" | "alias_create" | "alias_delete",
+    where: string,
   ): LimitRule {
     return {
       kind: "limit",

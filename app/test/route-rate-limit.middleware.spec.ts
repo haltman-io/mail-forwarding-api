@@ -49,6 +49,24 @@ describe("RouteRateLimitMiddleware", () => {
         aliasListPerMinPerKey: 1,
         aliasCreatePerMinPerKey: 1,
         aliasDeletePerMinPerKey: 1,
+        handleSubscribeSlowDelayAfter: 100,
+        handleSubscribeSlowDelayStepMs: 1,
+        handleSubscribePer10MinPerIp: 100,
+        handleSubscribePerHourPerTo: 100,
+        handleSubscribePerHourPerHandle: 100,
+        handleUnsubscribeSlowDelayAfter: 100,
+        handleUnsubscribeSlowDelayStepMs: 1,
+        handleUnsubscribePer10MinPerIp: 100,
+        handleUnsubscribePerHourPerHandle: 100,
+        handleConfirmPer10MinPerIp: 100,
+        handleConfirmPer10MinPerToken: 100,
+        handleDomainSlowDelayAfter: 100,
+        handleDomainSlowDelayStepMs: 1,
+        handleDomainPer10MinPerIp: 100,
+        handleDomainPerHourPerHandle: 100,
+        handleApiCreatePerMinPerKey: 1,
+        handleApiDeletePerMinPerKey: 1,
+        handleApiDomainPerMinPerKey: 1,
       }),
     };
     const redisService = {
@@ -198,6 +216,40 @@ describe("RouteRateLimitMiddleware", () => {
     expect(secondNext).toHaveBeenCalledTimes(1);
     expect(firstRes.statusCode).toBe(200);
     expect(secondRes.statusCode).toBe(200);
+  });
+
+  it("limits alias PGP mutations by API key", async () => {
+    const middleware = createMiddleware();
+    const next = jest.fn();
+
+    const firstReq = createMockRequest({
+      method: "POST",
+      path: "/api/alias/contact%40example.com/pgp",
+      headers: { "x-api-key": token },
+    });
+    const firstRes = createMockResponse();
+
+    await middleware.use(firstReq, firstRes, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+
+    const secondReq = createMockRequest({
+      method: "PATCH",
+      path: "/api/alias/contact%40example.com/pgp",
+      headers: { "x-api-key": token },
+    });
+    const secondRes = createMockResponse();
+    const secondNext = jest.fn();
+
+    await middleware.use(secondReq, secondRes, secondNext);
+
+    expect(secondNext).not.toHaveBeenCalled();
+    expect(secondRes.statusCode).toBe(429);
+    expect(secondRes.body).toEqual({
+      error: "rate_limited",
+      where: "alias_pgp",
+      reason: "too_many_requests_key",
+    });
   });
 
   it("counts only failed sign-in attempts for auth login limits", async () => {

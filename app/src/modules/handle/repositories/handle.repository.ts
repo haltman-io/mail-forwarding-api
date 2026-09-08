@@ -8,6 +8,10 @@ export interface HandleRow {
   handle: string;
   address: string | null;
   active: number;
+  pgp_public_key?: string | null;
+  pgp_fingerprint?: string | null;
+  pgp_enabled?: number | null;
+  pgp_hide_subject?: number | null;
   unsubscribed_at: Date | string | null;
 }
 
@@ -45,7 +49,16 @@ export class HandleRepository {
     const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<HandleRow[]>(
       executor,
-      `SELECT id, handle, address, active, unsubscribed_at
+      `SELECT
+         id,
+         handle,
+         address,
+         active,
+         pgp_public_key,
+         pgp_fingerprint,
+         pgp_enabled,
+         pgp_hide_subject,
+         unsubscribed_at
        FROM alias_handle
        WHERE handle = ?
        LIMIT 1${lockClause}`,
@@ -64,7 +77,16 @@ export class HandleRepository {
     const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<HandleRow[]>(
       executor,
-      `SELECT id, handle, address, active, unsubscribed_at
+      `SELECT
+         id,
+         handle,
+         address,
+         active,
+         pgp_public_key,
+         pgp_fingerprint,
+         pgp_enabled,
+         pgp_hide_subject,
+         unsubscribed_at
        FROM alias_handle
        WHERE handle = ?
          AND active = 1
@@ -123,6 +145,10 @@ export class HandleRepository {
       `UPDATE alias_handle
        SET address = NULL,
            active = 0,
+           pgp_public_key = NULL,
+           pgp_fingerprint = NULL,
+           pgp_enabled = 0,
+           pgp_hide_subject = 0,
            unsubscribed_at = CURRENT_TIMESTAMP(6)
        WHERE handle = ?
          AND active = 1
@@ -134,5 +160,53 @@ export class HandleRepository {
       ok: Boolean(result?.affectedRows === 1),
       affected: Number(result?.affectedRows ?? 0),
     };
+  }
+
+  async updatePgpById(
+    id: number,
+    payload: {
+      publicKey: string | null;
+      fingerprint: string | null;
+      enabled: boolean;
+      hideSubject: boolean;
+    },
+    connection?: PoolConnection,
+  ): Promise<{ ok: boolean; affectedRows: number }> {
+    const executor = connection ?? this.database;
+    const result = await runQuery<InsertResult>(
+      executor,
+      `UPDATE alias_handle
+       SET pgp_public_key = ?,
+           pgp_fingerprint = ?,
+           pgp_enabled = ?,
+           pgp_hide_subject = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [
+        payload.publicKey,
+        payload.fingerprint,
+        payload.enabled ? 1 : 0,
+        payload.hideSubject ? 1 : 0,
+        id,
+      ],
+    );
+
+    return { ok: true, affectedRows: Number(result?.affectedRows ?? 0) };
+  }
+
+  async clearPgpById(
+    id: number,
+    connection?: PoolConnection,
+  ): Promise<{ ok: boolean; affectedRows: number }> {
+    return this.updatePgpById(
+      id,
+      {
+        publicKey: null,
+        fingerprint: null,
+        enabled: false,
+        hideSubject: false,
+      },
+      connection,
+    );
   }
 }

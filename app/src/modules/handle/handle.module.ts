@@ -13,6 +13,7 @@ import { HandleController } from "./handle.controller.js";
 import { HandleDisabledDomainRepository } from "./repositories/handle-disabled-domain.repository.js";
 import { HandleRepository } from "./repositories/handle.repository.js";
 import { HandleApiService } from "./services/handle-api.service.js";
+import { HandlePgpService } from "./services/handle-pgp.service.js";
 import { HandleService } from "./services/handle.service.js";
 
 @Module({
@@ -28,6 +29,7 @@ import { HandleService } from "./services/handle.service.js";
     HandleDisabledDomainRepository,
     HandleService,
     HandleApiService,
+    HandlePgpService,
     ApiKeyGuard,
     ApiTokensRepository,
     ApiLogInterceptor,

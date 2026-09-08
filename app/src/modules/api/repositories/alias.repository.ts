@@ -10,6 +10,10 @@ export interface AliasRow {
   goto: string;
   active: number;
   domain_id: number | null;
+  pgp_public_key?: string | null;
+  pgp_fingerprint?: string | null;
+  pgp_enabled?: number | null;
+  pgp_hide_subject?: number | null;
   created: Date | string;
   modified: Date | string;
 }
@@ -76,7 +80,17 @@ export class AliasRepository {
     const hasLimit = Number.isInteger(limit) && limit > 0;
     const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
 
-    const sqlBase = `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+    const sqlBase = `SELECT
+         a.id,
+         a.address,
+         a.goto,
+         a.active,
+         d.id AS domain_id,
+         a.pgp_fingerprint,
+         a.pgp_enabled,
+         a.pgp_hide_subject,
+         a.created,
+         a.modified
        FROM alias a
        LEFT JOIN domain d
          ON d.name COLLATE utf8mb4_unicode_ci =
@@ -170,7 +184,18 @@ export class AliasRepository {
     const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     const rows = await runQuery<AliasRow[]>(
       executor,
-      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+      `SELECT
+         a.id,
+         a.address,
+         a.goto,
+         a.active,
+         d.id AS domain_id,
+         a.pgp_public_key,
+         a.pgp_fingerprint,
+         a.pgp_enabled,
+         a.pgp_hide_subject,
+         a.created,
+         a.modified
        FROM alias a
        LEFT JOIN domain d
          ON d.name COLLATE utf8mb4_unicode_ci =
@@ -235,7 +260,18 @@ export class AliasRepository {
     const lockClause = options.forUpdate ? " FOR UPDATE" : "";
     return runQuery<AliasRow[]>(
       executor,
-      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id, a.created, a.modified
+      `SELECT
+         a.id,
+         a.address,
+         a.goto,
+         a.active,
+         d.id AS domain_id,
+         a.pgp_public_key,
+         a.pgp_fingerprint,
+         a.pgp_enabled,
+         a.pgp_hide_subject,
+         a.created,
+         a.modified
        FROM alias a
        LEFT JOIN domain d
          ON d.name COLLATE utf8mb4_unicode_ci =
@@ -309,6 +345,55 @@ export class AliasRepository {
     );
   }
 
+  async updatePgpById(
+    id: number,
+    payload: {
+      publicKey: string | null;
+      fingerprint: string | null;
+      enabled: boolean;
+      hideSubject: boolean;
+    },
+    connection?: PoolConnection,
+  ): Promise<{ ok: boolean; affectedRows: number }> {
+    const executor = connection ?? this.database;
+    const result = await runQuery<InsertResult>(
+      executor,
+      `UPDATE alias
+       SET pgp_public_key = ?,
+           pgp_fingerprint = ?,
+           pgp_enabled = ?,
+           pgp_hide_subject = ?,
+           modified = CURRENT_TIMESTAMP()
+       WHERE id = ?
+       LIMIT 1`,
+      [
+        payload.publicKey,
+        payload.fingerprint,
+        payload.enabled ? 1 : 0,
+        payload.hideSubject ? 1 : 0,
+        id,
+      ],
+    );
+
+    return { ok: true, affectedRows: Number(result?.affectedRows ?? 0) };
+  }
+
+  async clearPgpById(
+    id: number,
+    connection?: PoolConnection,
+  ): Promise<{ ok: boolean; affectedRows: number }> {
+    return this.updatePgpById(
+      id,
+      {
+        publicKey: null,
+        fingerprint: null,
+        enabled: false,
+        hideSubject: false,
+      },
+      connection,
+    );
+  }
+
   private async createIfNotExistsWithConnection(
     connection: PoolConnection,
     payload: {
@@ -326,7 +411,16 @@ export class AliasRepository {
   }> {
     const rows = await runQuery<AliasRow[]>(
       connection,
-      `SELECT a.id, a.address, a.goto, a.active, d.id AS domain_id
+      `SELECT
+         a.id,
+         a.address,
+         a.goto,
+         a.active,
+         d.id AS domain_id,
+         a.pgp_public_key,
+         a.pgp_fingerprint,
+         a.pgp_enabled,
+         a.pgp_hide_subject
        FROM alias a
        LEFT JOIN domain d
          ON d.name COLLATE utf8mb4_unicode_ci =
@@ -365,6 +459,10 @@ export class AliasRepository {
       `UPDATE alias
        SET goto = ?,
            active = 0,
+           pgp_public_key = NULL,
+           pgp_fingerprint = NULL,
+           pgp_enabled = 0,
+           pgp_hide_subject = 0,
            modified = CURRENT_TIMESTAMP()
        WHERE address = ?
          AND active = 1

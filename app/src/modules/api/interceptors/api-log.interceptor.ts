@@ -22,6 +22,7 @@ type AuditSummary = {
   request_id: string | null;
   resource: {
     alias: string | null;
+    handle: string | null;
   };
 };
 
@@ -51,6 +52,24 @@ function resolveAliasFromDelete(request: Request): string | null {
   const query = request.query as Record<string, unknown> | undefined;
   const alias = normalizeText(body?.alias ?? query?.alias);
   return alias || null;
+}
+
+function decodeRouteSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function resolveAliasFromPgpRoute(route: string): string | null {
+  const match = /^\/api\/alias\/([^/]+)\/pgp$/.exec(route);
+  return match?.[1] ? decodeRouteSegment(match[1]).trim().toLowerCase() : null;
+}
+
+function resolveHandleFromPgpRoute(route: string): string | null {
+  const match = /^\/api\/handle\/([^/]+)\/pgp$/.exec(route);
+  return match?.[1] ? decodeRouteSegment(match[1]).trim().toLowerCase() : null;
 }
 
 @Injectable()
@@ -131,6 +150,7 @@ export class ApiLogInterceptor implements NestInterceptor {
       request_id: (request as RequestWithContext).requestId ?? null,
       resource: {
         alias: this.resolveAlias(route, request),
+        handle: this.resolveHandle(route),
       },
     };
   }
@@ -151,6 +171,12 @@ export class ApiLogInterceptor implements NestInterceptor {
     }
     if (normalizedMethod === "GET" && route === "/api/activity") {
       return "activity_list";
+    }
+    if (/^\/api\/alias\/[^/]+\/pgp$/.test(route)) {
+      return `alias_pgp_${normalizedMethod.toLowerCase()}`;
+    }
+    if (/^\/api\/handle\/[^/]+\/pgp$/.test(route)) {
+      return `handle_pgp_${normalizedMethod.toLowerCase()}`;
     }
     return "api_request";
   }
@@ -176,6 +202,18 @@ export class ApiLogInterceptor implements NestInterceptor {
     }
     if (route === "/api/alias/delete") {
       return resolveAliasFromDelete(request);
+    }
+    const pgpAlias = resolveAliasFromPgpRoute(route);
+    if (pgpAlias) {
+      return pgpAlias;
+    }
+    return null;
+  }
+
+  private resolveHandle(route: string): string | null {
+    const pgpHandle = resolveHandleFromPgpRoute(route);
+    if (pgpHandle) {
+      return pgpHandle;
     }
     return null;
   }

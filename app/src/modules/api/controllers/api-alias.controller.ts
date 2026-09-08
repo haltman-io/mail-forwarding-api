@@ -1,10 +1,24 @@
-import { Controller, Get, Post, Req, Res, UseGuards, UseInterceptors } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 
 import { parsePagination } from "../../../shared/http/pagination.utils.js";
+import { PgpKeyCreateDto, PgpKeyPatchDto } from "../../../shared/pgp/pgp-key.dto.js";
 import { PublicHttpException } from "../../../shared/errors/public-http.exception.js";
 import { ApiKeyGuard } from "../guards/api-key.guard.js";
 import { ApiLogInterceptor } from "../interceptors/api-log.interceptor.js";
+import { AliasPgpService } from "../services/alias-pgp.service.js";
 import { AliasService } from "../services/alias.service.js";
 
 @Controller()
@@ -13,12 +27,13 @@ import { AliasService } from "../services/alias.service.js";
 export class ApiAliasController {
   constructor(
     private readonly aliasService: AliasService,
+    private readonly aliasPgpService: AliasPgpService,
   ) {}
 
   @Get("alias/list")
   async listAliases(@Req() req: Request, @Res() res: Response): Promise<void> {
     const owner = this.requireOwner(req);
-    const paging = parsePagination(req.query as Record<string, unknown>);
+    const paging = parsePagination(req.query);
     const result = await this.aliasService.listAliases({
       ownerEmail: owner,
       ...paging,
@@ -38,7 +53,7 @@ export class ApiAliasController {
   async getActivity(@Req() req: Request, @Res() res: Response): Promise<void> {
     const owner = this.requireOwner(req);
     const paging = parsePagination(
-      req.query as Record<string, unknown>,
+      req.query,
       { defaultLimit: 50, maxLimit: 200 },
     );
     const result = await this.aliasService.getActivity({
@@ -71,6 +86,74 @@ export class ApiAliasController {
     const result = await this.aliasService.deleteAlias({
       ownerEmail: owner,
       alias: body?.alias ?? query?.alias,
+    });
+
+    res.status(200).json(result);
+  }
+
+  @Get("alias/:alias/pgp")
+  async getAliasPgp(
+    @Param("alias") alias: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const owner = this.requireOwner(req);
+    const result = await this.aliasPgpService.getPgp({
+      ownerEmail: owner,
+      alias,
+    });
+
+    res.status(200).json(result);
+  }
+
+  @Post("alias/:alias/pgp")
+  async setAliasPgp(
+    @Param("alias") alias: string,
+    @Body() dto: PgpKeyCreateDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const owner = this.requireOwner(req);
+    const result = await this.aliasPgpService.setPgp({
+      ownerEmail: owner,
+      alias,
+      publicKey: dto.public_key,
+      enabled: dto.enabled,
+      hideSubject: dto.hide_subject,
+    });
+
+    res.status(200).json(result);
+  }
+
+  @Patch("alias/:alias/pgp")
+  async patchAliasPgp(
+    @Param("alias") alias: string,
+    @Body() dto: PgpKeyPatchDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const owner = this.requireOwner(req);
+    const result = await this.aliasPgpService.patchPgp({
+      ownerEmail: owner,
+      alias,
+      publicKey: dto.public_key,
+      enabled: dto.enabled,
+      hideSubject: dto.hide_subject,
+    });
+
+    res.status(200).json(result);
+  }
+
+  @Delete("alias/:alias/pgp")
+  async deleteAliasPgp(
+    @Param("alias") alias: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const owner = this.requireOwner(req);
+    const result = await this.aliasPgpService.deletePgp({
+      ownerEmail: owner,
+      alias,
     });
 
     res.status(200).json(result);

@@ -11,6 +11,7 @@ import { ActivityRepository } from "./repositories/activity.repository.js";
 import { ApiLogsRepository } from "./repositories/api-logs.repository.js";
 import { ApiTokenRequestsRepository } from "./repositories/api-token-requests.repository.js";
 import { ApiTokensRepository } from "./repositories/api-tokens.repository.js";
+import { AliasPgpService } from "./services/alias-pgp.service.js";
 import { AliasService } from "./services/alias.service.js";
 import { ApiCredentialsEmailService } from "./services/api-credentials-email.service.js";
 import { ApiCredentialsService } from "./services/api-credentials.service.js";
@@ -25,6 +26,7 @@ import { ApiCredentialsService } from "./services/api-credentials.service.js";
     ActivityRepository,
     ApiKeyGuard,
     ApiLogInterceptor,
+    AliasPgpService,
     AliasService,
     ApiCredentialsEmailService,
     ApiCredentialsService,
