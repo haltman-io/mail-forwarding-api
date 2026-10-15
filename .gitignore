@@ -16,6 +16,8 @@ skills-lock.json
 /app/docs
 /app/app.zip
 app.zip
+scripts/pgp/config.local.sh
+scripts/pgp/*.asc
 
 # =========================================================
 # dependencies

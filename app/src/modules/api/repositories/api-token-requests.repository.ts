@@ -139,19 +139,17 @@ function buildPendingMeta(
 async function selectPendingForUpdate(
   conn: PoolConnection,
   email: string,
-  action: ApiTokenRequestAction,
 ): Promise<PendingRow | null> {
   const rows: PendingRow[] = await conn.query(
     `SELECT id, email, action, status, days, created_at, expires_at, confirmed_at,
             send_count, last_sent_at, attempts_confirm, automatic_renew
      FROM api_token_requests
      WHERE email = ?
-       AND action = ?
        AND status = 'pending'
      ORDER BY id DESC
      LIMIT 1
      FOR UPDATE`,
-    [email, action],
+    [email],
   );
   return rows[0] ?? null;
 }
@@ -239,13 +237,12 @@ export class ApiTokenRequestsRepository {
             `UPDATE api_token_requests
              SET status = 'expired'
              WHERE email = ?
-               AND action = ?
                AND status = 'pending'
                AND expires_at <= NOW(6)`,
-            [payload.email, action],
+            [payload.email],
           );
 
-          let pending = await selectPendingForUpdate(conn, payload.email, action);
+          let pending = await selectPendingForUpdate(conn, payload.email);
 
           if (
             pending &&
@@ -293,7 +290,8 @@ export class ApiTokenRequestsRepository {
               try {
                 await conn.query(
                   `UPDATE api_token_requests
-                   SET token_hash = ?,
+                   SET action = ?,
+                       token_hash = ?,
                        days = ?,
                        automatic_renew = ?,
                        expires_at = DATE_ADD(NOW(6), INTERVAL ? MINUTE),
@@ -303,6 +301,7 @@ export class ApiTokenRequestsRepository {
                        last_sent_at = NOW(6)
                    WHERE id = ?`,
                   [
+                    action,
                     tokenHash32,
                     payload.days,
                     payload.automaticRenew ? 1 : 0,
@@ -363,7 +362,7 @@ export class ApiTokenRequestsRepository {
             } catch (err) {
               const e = err as { code?: string };
               if (e?.code === "ER_DUP_ENTRY") {
-                const existing = await selectPendingForUpdate(conn, payload.email, action);
+                const existing = await selectPendingForUpdate(conn, payload.email);
                 if (existing) {
                   return {
                     action: "cooldown" as const,
